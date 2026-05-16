@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.40';
+const VERSION='0.42';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4056,7 +4056,8 @@ function mpConnect(roomCode){
       const st=document.getElementById('mp-status-text');
       if(st)st.textContent=MP.isHost?'Waiting for players...':'Joining...';
       if(!MP.isHost){
-        const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId});
+        const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId,
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
         sendJoin();
         MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},2000);
         MP._joinTimeout=setTimeout(()=>{
@@ -4100,8 +4101,12 @@ function mpHandleMessage(d){
       const startY=G.lv?.playerStart?.y||(HPSY*TL)||400;
       while(G.players.length<=playerIdx)G.players.push(createRemotePlayer(d.playerId,playerIdx,startX,startY));
       G.players[playerIdx]._peerId=d.playerId;G.players[playerIdx]._playerIdx=playerIdx;
+      // Apply client's chosen colors immediately
+      if(d.charPrimary)G.players[playerIdx].charPrimary=d.charPrimary;
+      if(d.charAccent)G.players[playerIdx].charAccent=d.charAccent;
       MP.enabled=true;
-      mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length});
+      mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length,
+        hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
       mpUpdateLobby();showMsg(`Player ${playerIdx+1} joined!`);
     }
     if(d.type==='input'&&MP.remoteInputs[d.playerId]){
@@ -4111,16 +4116,20 @@ function mpHandleMessage(d){
       if(rp&&d.px){
         rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
+        if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;}
+        if(d.attacking&&!rp.attacking)SFX.swing();
         rp.attacking=d.attacking||false;
         rp.atkProg=d.atkProg||0;
         rp.atkAngle=d.atkAngle||0;
       }
       // Replace client projs in host render pool each input (no ghost accumulation)
       if(d.projs){
+        const prevCount=G.projs.filter(p=>p._remote).length;
         G.projs=G.projs.filter(p=>!p._remote);
         d.projs.forEach(p=>G.projs.push({
           ...p,life:0.12,maxLife:0.12,trail:[],_remote:true,
         }));
+        if(d.projs.length>prevCount)SFX.shoot(false);
       }
     }
   } else {
@@ -4135,6 +4144,11 @@ function mpHandleMessage(d){
         else slots.push(createRemotePlayer('remote-'+i,i));
       }
       G.players=slots;
+      // Apply host's colors to their remote player slot
+      if(d.hostPrimary&&G.players[0]&&G.players[0]!==G.p){
+        G.players[0].charPrimary=d.hostPrimary;
+        G.players[0].charAccent=d.hostAccent;
+      }
       MP.enabled=true;
       document.getElementById('mp-modal').classList.add('hidden');
       showMsg(`Connected — you are Player ${d.playerIdx+1}`);
@@ -4178,6 +4192,7 @@ function mpSendInput(){
     attacking:G.p.attacking||false,
     atkProg:G.p.atkProg||0,
     atkAngle:G.p.atkAngle||0,
+    charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,
     projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
@@ -4251,10 +4266,12 @@ function mpApplyState(data){
   if(!data.players)return;
   // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
+    const prevCount=G.projs.filter(p=>p._remote).length;
     G.projs=G.projs.filter(p=>p._local);
     data.projs.forEach(pr=>G.projs.push({
       ...pr,life:0.12,maxLife:0.12,trail:[],_remote:true,
     }));
+    if(data.projs.length>prevCount)SFX.shoot(false);
   }
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
@@ -4266,6 +4283,7 @@ function mpApplyState(data){
     if(snap.charPrimary)rp.charPrimary=snap.charPrimary;
     if(snap.charAccent)rp.charAccent=snap.charAccent;
     rp.turbo=snap.turbo;rp.item=snap.item;
+    if(snap.attacking&&!rp.attacking)SFX.swing();
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
   });
 }
