@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.67';
+const VERSION='0.68';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3600,8 +3600,9 @@ function doTurbo(p){
 function updateProjs(dt){
   const p=G.p;
   G.projs=G.projs.filter(pr=>{
-    // Remote display-only projs — just move and expire, no collision
-    if(pr._remote||pr._remoteId){
+    // Display-only projs synced FROM host (rendered on client) skip collision.
+    // _remoteId projs are client attacks landing on host — host MUST process collision.
+    if(pr._remote||(pr._remoteId&&!MP.isHost)){
       pr.x+=pr.vx*dt;pr.y+=pr.vy*dt;pr.life-=dt;return pr.life>0;
     }
     // Advance position + trail
@@ -4154,7 +4155,7 @@ function mpHandleMessage(d){
     const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
     const enemies=(d.en||[]).map(a=>({
       eid:a[0],type:a[1],x:a[2],y:a[3],hp:a[4],maxHp:a[5],atk:a[6],spd:a[7],
-      col:a[8],sz:a[9],tier:a[10]||1,
+      col:a[8],sz:(typeof a[9]==='number'&&a[9]>0&&a[9]<3)?a[9]:.5,tier:a[10]||1,
       alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
       dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
       facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
@@ -4457,7 +4458,8 @@ function mpApplyState(data){
       if(!e&&es.alive){
         // Spawner created a new enemy — add it to client's array
         e={eid:es.id,x:es.x,y:es.y,hp:es.hp,maxHp:es.hp||10,
-          type:es.type||'grunt',col:es.col||'#aa3333',sz:es.sz||.5,
+          type:es.type||'grunt_light',col:es.col||'#aa3333',
+          sz:(typeof es.sz==='number'&&es.sz>0&&es.sz<3)?es.sz:.5,
           alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
           dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
           facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
