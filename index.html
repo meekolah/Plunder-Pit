@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.39';
+const VERSION='0.40';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4119,16 +4119,8 @@ function mpHandleMessage(d){
       if(d.projs){
         G.projs=G.projs.filter(p=>!p._remote);
         d.projs.forEach(p=>G.projs.push({
-          ...p,vx:0,vy:0,life:0.06,maxLife:0.06,trail:[],_remote:true,
+          ...p,life:0.12,maxLife:0.12,trail:[],_remote:true,
         }));
-      }
-      // Fire projectile for remote player if they attacked this frame
-      if(rp&&d.didShoot&&(!rp._lastShoot||performance.now()-rp._lastShoot>300)){
-        rp._lastShoot=performance.now();
-        const fx=d.facingX||rp.facing?.x||1,fy=d.facingY||rp.facing?.y||0;
-        G.projs.push({x:rp.x,y:rp.y,vx:fx*285,vy:fy*285,
-          col:rp.charAccent||'#44cc44',sz:4,life:0.8,maxLife:0.8,
-          atk:rp.atk||18,owner:ri.playerIdx,trail:[]});
       }
     }
   } else {
@@ -4186,7 +4178,11 @@ function mpSendInput(){
     attacking:G.p.attacking||false,
     atkProg:G.p.atkProg||0,
     atkAngle:G.p.atkAngle||0,
-    projs:G.projs.slice(0,20).map(pr=>({x:Math.round(pr.x),y:Math.round(pr.y),col:pr.col,sz:pr.sz||4})),
+    projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
+      x:Math.round(pr.x),y:Math.round(pr.y),
+      vx:Math.round(pr.vx),vy:Math.round(pr.vy),
+      col:pr.col,sz:pr.sz||4,
+    })),
   });
   MP._wasMouseBtn=mouseBtn;
 }
@@ -4242,8 +4238,9 @@ function mpBroadcastState(){
       turbo:p.turbo||0,item:p.item,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
     }:null),
-    projs:G.projs.slice(0,40).map(pr=>({
+    projs:G.projs.filter(p=>!p._remote).slice(0,40).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
+      vx:Math.round(pr.vx),vy:Math.round(pr.vy),
       col:pr.col,sz:pr.sz||4,
     })),
   });
@@ -4254,9 +4251,9 @@ function mpApplyState(data){
   if(!data.players)return;
   // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
-    G.projs=G.projs.filter(p=>p._local); // keep only client's own projs
+    G.projs=G.projs.filter(p=>p._local);
     data.projs.forEach(pr=>G.projs.push({
-      ...pr,vx:0,vy:0,life:0.06,maxLife:0.06,trail:[],_remote:true,
+      ...pr,life:0.12,maxLife:0.12,trail:[],_remote:true,
     }));
   }
   data.players.forEach((snap,i)=>{
