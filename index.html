@@ -103,6 +103,7 @@
   <h1>Gauntless</h1>
   <div class="sub">~ Eight Realms. One Demon. No Mercy. ~</div>
   <button class="bigbtn" id="startbtn">Enter the Tower</button>
+  <div style="position:absolute;bottom:18px;right:20px;font-family:'Cinzel',serif;font-size:9px;color:#333;letter-spacing:.1em">v0.24</div>
 </div>
 
 <!-- Shop -->
@@ -3994,10 +3995,8 @@ function propagateKnockback(source,vx,vy,depth){
   });
 }
 
-// ── MULTIPLAYER — ntfy.sh pub/sub relay (free, no signup) ──
-// Subscribe via WebSocket, publish via HTTP POST.
-const NTFY='https://ntfy.sh';
-const NTFY_WS='wss://ntfy.sh';
+// ── MULTIPLAYER — Ably Pub/Sub (WebSocket, production-grade) ──
+const ABLY_KEY='DxsHQw.B1iZhA:fpYNYsoX-4SBKE5Vc9w7drzpPv1yaCpRUHHxZCcwXNE';
 const MP_MAX=4;
 const MP_COLORS=[
   {primary:'#2244cc',accent:'#4488ff'},
@@ -4008,7 +4007,7 @@ const MP_COLORS=[
 
 const MP={
   enabled:false,isHost:false,
-  ws:null,roomCode:null,
+  ably:null,channel:null,roomCode:null,
   playerId:null,
   localPlayerIdx:0,
   remoteInputs:{},
@@ -4018,63 +4017,65 @@ const MP={
 };
 
 function mpGenCode(){
-  // Exclude confusable chars: 0/O, 1/I/L
   const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code='';for(let i=0;i<6;i++)code+=chars[Math.floor(Math.random()*chars.length)];
   return code;
 }
 function mpGenId(){return Math.random().toString(36).slice(2,14);}
 
-async function mpSend(data){
-  if(!MP.roomCode)return;
-  try{
-    await fetch(`${NTFY}/${MP.roomCode}`,{
-      method:'POST',
-      body:JSON.stringify({...data,from:MP.playerId}),
-    });
-  }catch(e){}
+function mpSend(data){
+  if(!MP.channel)return;
+  try{MP.channel.publish('msg',{...data,from:MP.playerId});}catch(e){}
 }
 
 function mpConnect(roomCode){
   MP.roomCode=roomCode.toLowerCase();
   MP.playerId=MP.playerId||mpGenId();
-  // SSE for receiving — simpler and more firewall-friendly than WebSocket
-  const es=new EventSource(`${NTFY}/${MP.roomCode}/sse`);
-  MP.ws=es;
-  es.onopen=()=>{
-    MP.status='connected';
+  // Load Ably SDK dynamically then connect
+  const script=document.createElement('script');
+  script.src='https://cdn.ably.com/lib/ably.min-2.js';
+  script.onload=()=>{
+    const ably=new Ably.Realtime({key:ABLY_KEY,clientId:MP.playerId});
+    MP.ably=ably;
+    ably.connection.on('connected',()=>{
+      MP.status='connected';
+      const ch=ably.channels.get('gauntless-'+MP.roomCode);
+      MP.channel=ch;
+      ch.subscribe('msg',(msg)=>{
+        const d=msg.data;
+        if(!d||d.from===MP.playerId)return;
+        MP._msgCount++;
+        const dbg=document.getElementById('mp-status-text');
+        if(dbg&&!MP.enabled)dbg.textContent=(MP.isHost?'Host':'Client')+' msgs:'+MP._msgCount;
+        mpHandleMessage(d);
+      });
+      const st=document.getElementById('mp-status-text');
+      if(st)st.textContent=MP.isHost?'Waiting for players...':'Joining...';
+      if(!MP.isHost){
+        const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId});
+        sendJoin();
+        MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},2000);
+        MP._joinTimeout=setTimeout(()=>{
+          if(!MP.enabled){
+            clearInterval(MP._joinRetry);
+            const st=document.getElementById('mp-status-text');
+            if(st)st.textContent='Host not found - check code.';
+            MP.status='offline';
+          }
+        },15000);
+      }
+    });
+    ably.connection.on('failed',(err)=>{
+      const st=document.getElementById('mp-status-text');
+      if(st)st.textContent='Connection failed.';
+      MP.status='offline';
+    });
+  };
+  script.onerror=()=>{
     const st=document.getElementById('mp-status-text');
-    if(st)st.textContent=MP.isHost?'Waiting for players…':'Joining…';
-    if(!MP.isHost){
-      const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId});
-      sendJoin();
-      MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},2000);
-      MP._joinTimeout=setTimeout(()=>{
-        if(!MP.enabled){
-          clearInterval(MP._joinRetry);
-          const st=document.getElementById('mp-status-text');
-          if(st)st.textContent='Host not found — check code.';
-          MP.status='offline';
-        }
-      },15000);
-    }
-    MP._ping=setInterval(()=>mpSend({type:'ping'}),25000);
+    if(st)st.textContent='Failed to load Ably SDK.';
   };
-  es.onmessage=(e)=>{
-    MP._msgCount++;
-    const dbg=document.getElementById('mp-status-text');
-    if(dbg&&!MP.enabled)dbg.textContent=(MP.isHost?'Host':'Client')+' — msgs:'+MP._msgCount;
-    try{
-      const env=JSON.parse(e.data);
-      const d=JSON.parse(env.message||e.data);
-      if(d.from===MP.playerId)return;
-      mpHandleMessage(d);
-    }catch(err){}
-  };
-  es.onerror=()=>{
-    const st=document.getElementById('mp-status-text');
-    if(st&&MP.status!=='connected')st.textContent='Connection failed — try again.';
-  };
+  document.head.appendChild(script);
 }
 
 
