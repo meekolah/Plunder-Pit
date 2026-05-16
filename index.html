@@ -103,7 +103,7 @@
   <h1>Gauntless</h1>
   <div class="sub">~ Eight Realms. One Demon. No Mercy. ~</div>
   <button class="bigbtn" id="startbtn">Enter the Tower</button>
-  <div style="position:absolute;bottom:18px;right:20px;font-family:'Cinzel',serif;font-size:9px;color:#333;letter-spacing:.1em">v0.24</div>
+  <div id="ver-tag" style="position:absolute;bottom:18px;right:20px;font-family:'Cinzel',serif;font-size:9px;color:#333;letter-spacing:.1em">v0.27</div>
 </div>
 
 <!-- Shop -->
@@ -214,7 +214,12 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
+const VERSION='0.27';
 const TL=38, MW=36, MH=36;
+// Set version display once DOM is ready
+document.addEventListener('DOMContentLoaded',()=>{
+  const vt=document.getElementById('ver-tag');if(vt)vt.textContent='v'+VERSION;
+});
 const TWALL=0,TFLOOR=1,TDOOR=2,TSWITCH=3,TEXIT=4,TSPIKE=5,TSECRET=6;
 
 // ═══════════════════════════════════════
