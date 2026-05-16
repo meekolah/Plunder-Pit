@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.54';
+const VERSION='0.55';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4032,7 +4032,7 @@ function mpGenId(){return Math.random().toString(36).slice(2,14);}
 
 function mpSend(data){
   if(!MP.channel)return;
-  try{MP.channel.publish('msg',{...data,from:MP.playerId});}catch(e){}
+  MP.channel.publish('msg',{...data,from:MP.playerId}).catch(e=>console.error('mpSend fail:',e,data.type));
 }
 
 function mpConnect(roomCode){
@@ -4097,8 +4097,9 @@ function mpHandleMessage(d){
   }
   if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
   if(!MP.isHost&&d.type==='syncLevel'){
+    try{
     const realm=REALMS.find(r=>r.id===d.realmId);
-    if(!realm)return;
+    if(!realm){showMsg('Level sync error: realm not found');return;}
     G.curRealm=realm;G.curLvNum=d.lvNum;
     const flat=d.map.split('').map(Number);
     const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
@@ -4128,9 +4129,14 @@ function mpHandleMessage(d){
     document.getElementById('hud').classList.remove('hidden');
     updHUD();MODE=d.isBoss?'boss':'level';
     showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
+    MP._levelReqT=0; // clear request flag
+    }catch(e){showMsg('Level sync error: '+e.message);}
     return;
   }
   if(MP.isHost){
+    if(d.type==='requestLevel'&&G.lv&&G.curRealm){
+      mpSendCurrentLevel();return;
+    }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
         // Already known (quick rejoin) — refresh ping, restore slot if nulled, resend welcome
@@ -4352,6 +4358,16 @@ function mpApplyState(data){
     mpSend({type:'join',playerId:MP.playerId,
       charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
     return;
+  }
+  // Client follows host into level — request sync if missed
+  if(!MP.isHost&&(data.mode==='level'||data.mode==='boss')&&MODE==='hub'){
+    if(!MP._levelReqT||Date.now()-MP._levelReqT>3000){
+      MP._levelReqT=Date.now();
+      mpSend({type:'requestLevel',playerId:MP.playerId});
+    }
+  }
+  if(!MP.isHost&&(data.mode==='hub'||data.mode==='shop')&&(MODE==='level'||MODE==='boss')){
+    returnHub(); // host went back, client follows
   }
   // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
