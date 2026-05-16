@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.68';
+const VERSION='0.69';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3642,6 +3642,7 @@ function updateProjs(dt){
           p.kills++;p.xp+=e.xp;
         });
         G.lv.enemies=G.lv.enemies.filter(e=>!toKill.includes(e));
+        toKill.forEach(e=>{if(e.eid)(G._mpDeaths=G._mpDeaths||[]).push(e.eid);});
         checkLevelUp();
       }
       // Destroy spawners in radius
@@ -4410,8 +4411,10 @@ function mpBroadcastState(){
       owner:pr._remoteId||MP.playerId,
     })),
     enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
+    deaths:G._mpDeaths||[],
     lv_items:(G.lv?.items||[]).map((_,i)=>i),
   });
+  G._mpDeaths=[];
 }
 
 
@@ -4448,6 +4451,31 @@ function mpApplyState(data){
     const newRemoteCount=data.projs.filter(pr=>pr.owner!==MP.playerId).length;
     if(newRemoteCount>lastCount)SFX.shoot(false);
     G._remoteProjCount=newRemoteCount;
+  }
+  // Handle enemy deaths from host — remove and trigger death FX
+  if(!MP.isHost&&data.deaths&&data.deaths.length&&G.lv?.enemies){
+    const deadSet=new Set(data.deaths);
+    G.lv.enemies.forEach(e=>{
+      if(e.eid&&deadSet.has(e.eid)){
+        // Trigger local death effects so client sees the kill
+        const pc=Math.floor(10+(e.sz||.6)*14);
+        for(let i=0;i<pc;i++){
+          const a=Math.random()*Math.PI*2,s=65+Math.random()*160;
+          G.parts.push({x:e.x,y:e.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+            life:.4+Math.random()*.25,ml:.65,
+            sz:3+Math.random()*5,col:e.col||'#aaa'});
+        }
+        for(let i=0;i<5;i++){
+          const a=Math.random()*Math.PI*2,s=40+Math.random()*80;
+          G.parts.push({x:e.x,y:e.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.1,ml:.1,sz:5,col:'#ffffff'});
+        }
+        G.dyingEnemies.push({x:e.x,y:e.y,col:e.col||'#aaa',sz:TL*(e.sz||.6),
+          vx:(Math.random()-.5)*55,vy:-35-Math.random()*65,
+          angle:Math.random()*Math.PI*2,timer:.3,maxTimer:.3});
+        if(SFX.enemyDie)SFX.enemyDie(e.type);
+      }
+    });
+    G.lv.enemies=G.lv.enemies.filter(e=>!e.eid||!deadSet.has(e.eid));
   }
   // Apply enemy state from host — match by ID to survive array shifts from deaths
   if(!MP.isHost&&data.enemies&&G.lv?.enemies){
@@ -5002,6 +5030,7 @@ function explodeSuicideBomber(e){
   G.p.turbo=Math.min(G.p.turboMax2||200,G.p.turbo+12);
   G.p.xp+=e.xp;G.p.kills++;checkLevelUp();
   if(e.g){const g=rand(e.g[0],e.g[1]);if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
+  if(e.eid)(G._mpDeaths=G._mpDeaths||[]).push(e.eid);
   G.lv.enemies=G.lv.enemies.filter(en=>en!==e);
   // Bomber chain cascade
   G.lv.enemies.forEach(other=>{
@@ -5132,6 +5161,7 @@ function killEnemy(e,overkill=0){
   G.dyingEnemies.push({x:e.x,y:e.y,col:e.col,sz:TL*(e.sz||.6)*Math.min(1.6,1+overkill*.4),
     vx:(Math.random()-.5)*(isOverkill?110:55),vy:-(isOverkill?65:35)-Math.random()*65,
     angle:Math.random()*Math.PI*2,timer:.3,maxTimer:.3});
+  if(e.eid)(G._mpDeaths=G._mpDeaths||[]).push(e.eid);
   G.lv.enemies=G.lv.enemies.filter(en=>en!==e);
   checkLevelUp();
 }
@@ -7855,10 +7885,10 @@ function loop(ts){
         if(!MP.enabled||MP.isHost){
           updateSpawners(dt);
           updateEnemies(dt);
-          updateDyingEnemies(dt);
           updateHazards(dt);
           if(MODE==='boss')updateBoss(dt);
         }
+        updateDyingEnemies(dt); // clients need this too for death tumbles from broadcast
         updateProjs(dt);
         G.frameCount=(G.frameCount||0)+1;
         updateWarnings(dt);
