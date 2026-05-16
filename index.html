@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.31';
+const VERSION='0.32';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4104,9 +4104,15 @@ function mpHandleMessage(d){
       mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length});
       mpUpdateLobby();showMsg(`Player ${playerIdx+1} joined!`);
     }
-    else if(d.type==='input'&&MP.remoteInputs[d.playerId]){
+    if(d.type==='input'&&MP.remoteInputs[d.playerId]){
       const ri=MP.remoteInputs[d.playerId];
       ri.keys=d.keys||{};ri.mousePos=d.mousePos||ri.mousePos;ri.mouseBtn=d.mouseBtn||false;
+      // Snap remote player to client's authoritative position
+      const rp=G.players[ri.playerIdx];
+      if(rp&&d.px){
+        rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
+        if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
+      }
     }
   } else {
     // CLIENT receives from host
@@ -4153,10 +4159,13 @@ function mpJoin(){
 function mpSendInput(){
   if(MP.isHost||!MP.enabled)return;
   const now=performance.now();
-  if(now-(MP._lastInputSend||0)<33)return; // throttle to ~30fps
+  if(now-(MP._lastInputSend||0)<33)return;
   MP._lastInputSend=now;
   mpSend({type:'input',playerId:MP.playerId,
-    keys:{...keys},mousePos:{...mousePos},mouseBtn});
+    keys:{...keys},mousePos:{...mousePos},mouseBtn,
+    px:Math.round(G.p.x),py:Math.round(G.p.y),
+    facingX:G.p.facing?.x||1,facingY:G.p.facing?.y||0,
+  });
 }
 
 function mpCopyCode(){
