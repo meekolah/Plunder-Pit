@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.29';
+const VERSION='0.30';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2819,31 +2819,7 @@ function drawSummary(){
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
-  // Notify clients — compressed level data to stay under Ably 16KB limit
-  if(MP.isHost&&MP.enabled){
-    mpSend({type:'syncLevel',
-      realmId:realm.id,lvNum,
-      map:G.lv.map.flat().join(''), // compact string instead of 2D array
-      playerStart:G.lv.playerStart,
-      stairsPos:G.lv.stairsPos,
-      rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
-      torches:G.lv.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:t.wall?1:0,side:t.side?1:0})),
-      secretPaths:G.lv.secretPaths||[],
-      enemies:G.lv.enemies.map(e=>({
-        type:e.type,x:Math.round(e.x),y:Math.round(e.y),
-        hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
-        col:e.col,sz:e.sz,tier:e.tier||1,
-        dir:e.dir||0,hidden:e.hidden?1:0,state:e.state||'idle',
-      })),
-      items:G.lv.items.map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0,realm:i.realm||''}) ),
-      spawners:G.lv.spawners.map(s=>({
-        tx:s.tx,ty:s.ty,x:s.x,y:s.y,hp:s.hp,mhp:s.maxHp,
-        alive:s.alive?1:0,activated:s.activated?1:0,
-        timer:s.timer,interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,
-      })),
-      isBoss:G.lv.isBoss?1:0,
-    });
-  }
+  if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
   // Place recoverable death pile if one exists for this floor
   if(G.deathPile&&G.deathPile.realm===realm.id&&G.deathPile.lvNum===lvNum){
     const px=G.lv.playerStart;
@@ -4160,8 +4136,8 @@ function mpHandleMessage(d){
   if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
   if(MP.isHost){
     if(d.type==='requestLevel'&&G.lv&&G.curRealm){
-      // Client missed the syncLevel — resend it
-      startLevel(G.curRealm,G.curLvNum);return;
+      // Resend current level data WITHOUT regenerating — don't reset host game
+      mpSendCurrentLevel();return;
     }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4288,6 +4264,9 @@ function mpBroadcastState(){
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
     }:null),
     projs:G.projs.slice(0,40).map(p=>({x:p.x,y:p.y,col:p.col,sz:p.sz||4,owner:p.owner||0})),
+    enemies:(G.lv?.enemies||[]).slice(0,60).map(e=>({
+      x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,hitFlash:e.hitFlash>0?1:0,alive:e.alive?1:0,
+    })),
   });
 }
 
@@ -4296,6 +4275,15 @@ function mpApplyState(data){
   if(!data.players)return;
   // Sync projectiles from host (render only — host handles collisions)
   if(!MP.isHost&&data.projs)G.projs=data.projs.map(p=>({...p,life:1,maxLife:1,dx:0,dy:0}));
+  // Apply enemy positions from host
+  if(!MP.isHost&&data.enemies&&G.lv?.enemies){
+    data.enemies.forEach((es,i)=>{
+      const e=G.lv.enemies[i];
+      if(!e)return;
+      e.x=lerp(e.x,es.x,.4);e.y=lerp(e.y,es.y,.4);
+      e.hp=es.hp;e.hitFlash=es.hitFlash||0;e.alive=!!es.alive;
+    });
+  }
   // If host is in a level but client is still in hub — request level sync
   if(!MP.isHost&&(data.mode==='level'||data.mode==='boss')&&(MODE==='hub'||MODE==='title')){
     mpSend({type:'requestLevel',playerId:MP.playerId});
@@ -4397,6 +4385,33 @@ function drawAmbientParticles(){
       ctx.shadowBlur=0;
     }
     ctx.globalAlpha=1;
+  });
+}
+
+function mpSendCurrentLevel(){
+  if(!G.lv||!G.curRealm)return;
+  const realm=G.curRealm;
+  mpSend({type:'syncLevel',
+    realmId:realm.id,lvNum:G.curLvNum,
+    map:G.lv.map.flat().join(''),
+    playerStart:G.lv.playerStart,
+    stairsPos:G.lv.stairsPos,
+    rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
+    torches:G.lv.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:t.wall?1:0,side:t.side?1:0})),
+    secretPaths:G.lv.secretPaths||[],
+    enemies:G.lv.enemies.map(e=>({
+      type:e.type,x:Math.round(e.x),y:Math.round(e.y),
+      hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
+      col:e.col,sz:e.sz,tier:e.tier||1,
+      dir:e.dir||0,hidden:e.hidden?1:0,state:e.state||'idle',
+    })),
+    items:G.lv.items.map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0,realm:i.realm||''})),
+    spawners:G.lv.spawners.map(s=>({
+      tx:s.tx,ty:s.ty,x:s.x,y:s.y,hp:s.hp,mhp:s.maxHp,
+      alive:s.alive?1:0,activated:s.activated?1:0,
+      timer:s.timer,interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,
+    })),
+    isBoss:G.lv.isBoss?1:0,
   });
 }
 
@@ -7552,12 +7567,14 @@ function loop(ts){
       } else {
         procInput(dt);
         updatePlayer(dt);
-        updateSpawners(dt);
-        updateEnemies(dt);
-        updateDyingEnemies(dt);
+        if(MP.isHost||!MP.enabled){
+          updateSpawners(dt);
+          updateEnemies(dt);
+          updateDyingEnemies(dt);
+        }
         updateHazards(dt);
         updateProjs(dt);
-        if(MODE==='boss')updateBoss(dt);
+        if(MP.isHost||!MP.enabled)if(MODE==='boss')updateBoss(dt);
         G.frameCount=(G.frameCount||0)+1;
         updateWarnings(dt);
         updateAmbientParticles(dt);
