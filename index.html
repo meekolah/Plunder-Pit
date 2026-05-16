@@ -852,11 +852,6 @@ function drawHub(){
   ctx.strokeStyle=near?'#d4a853':'rgba(212,168,83,.35)';ctx.lineWidth=1;ctx.stroke();
   drawSumner(HSX,HSY);
 
-  // Player + remote players
-  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
-  drawPlayer2();
-  drawProjs();
-
   // Proximity prompt (drawn in world space above character)
   if(G.hubNear){
     const label=G.hubNear.type==='sumner'?'⚔ / Z  Open Shop':(()=>{
@@ -881,7 +876,11 @@ function drawHub(){
 
   // Particles
   drawParts();
-  ctx.restore();
+  ctx.restore(); // back to screen space
+
+  // Draw players in screen space (after restore so cam isn't double-applied)
+  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
+  drawPlayer2();
 
   // Joystick (interact button instead of attack)
   drawJoy();
@@ -2815,6 +2814,33 @@ function drawSummary(){
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
+  // Notify clients — send full level data so they're in the SAME world
+  if(MP.isHost&&MP.enabled){
+    mpSend({type:'syncLevel',
+      realmId:realm.id,lvNum,
+      map:G.lv.map,
+      rooms:G.lv.rooms,
+      playerStart:G.lv.playerStart,
+      stairsPos:G.lv.stairsPos,
+      torches:G.lv.torches,
+      secretPaths:G.lv.secretPaths,
+      enemies:G.lv.enemies.map(e=>({
+        type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.maxHp,
+        atk:e.atk,spd:e.spd,col:e.col,sz:e.sz,tier:e.tier||1,
+        dir:e.dir||0,alive:true,hidden:e.hidden||false,
+        hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
+      })),
+      items:G.lv.items,
+      spawners:G.lv.spawners.map(s=>({
+        x:s.x,y:s.y,tx:s.tx,ty:s.ty,hp:s.hp,maxHp:s.maxHp,
+        alive:s.alive,activated:s.activated,timer:s.timer,
+        interval:s.interval,maxGrunts:s.maxGrunts,
+        hp1:s.hp1,maxHp1:s.maxHp1,tier:s.tier||1,
+        grunts:[],realm:realm.id,lvNum,
+      })),
+      isBoss:G.lv.isBoss||false,
+    });
+  }
   // Place recoverable death pile if one exists for this floor
   if(G.deathPile&&G.deathPile.realm===realm.id&&G.deathPile.lvNum===lvNum){
     const px=G.lv.playerStart;
@@ -3056,6 +3082,7 @@ function refreshShopUI(){
 
 function returnHub(){
   MODE='hub';
+  if(MP.isHost&&MP.enabled)mpSend({type:'returnHub'});
   // Clear all transient level state
   G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
   G.lv=null;G.hubNear=null;G.curRealm=null;G.deathPile=null;G._preMode=null;
@@ -4081,6 +4108,45 @@ function mpConnect(roomCode){
 
 function mpHandleMessage(d){
   if(d.type==='ping')return;
+  // Client follows host into levels
+  if(!MP.isHost&&d.type==='syncLevel'){
+    const realm=REALMS.find(r=>r.id===d.realmId);
+    if(!realm)return;
+    G.curRealm=realm;G.curLvNum=d.lvNum;
+    // Reconstruct enemies with full properties from their type definitions
+    const enemies=d.enemies.map(ed=>{
+      const base=mkEnemy?.(realm,d.lvNum,ed.type)||{};
+      return{...base,...ed,alive:true,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
+        dyingTimer:0,parts:[],_chainKb:false,invuln:0,atkTimer:0};
+    });
+    // Reconstruct spawners
+    const spawners=d.spawners.map(sd=>{
+      const r=REALMS.find(r=>r.id===sd.realm);
+      return{...sd,grunts:[],realm:r,
+        hp1:sd.hp1??2,maxHp1:sd.maxHp1??2,tier:sd.tier||1};
+    });
+    G.lv={map:d.map,rooms:d.rooms,playerStart:d.playerStart,
+      stairsPos:d.stairsPos,torches:d.torches,
+      secretPaths:d.secretPaths||[],enemies,items:d.items||[],
+      spawners,hazards:[],warnings:[],ff:null,
+      isBoss:d.isBoss||false,realm,
+      decos:[],barrels:[],exitTimer:0};
+    G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
+    const p=G.p;
+    p.x=d.playerStart.x;p.y=d.playerStart.y;
+    G.cam.x=p.x-cv.width/2;G.cam.y=p.y-cv.height/2;
+    p.invuln=.6;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
+    G.floorStats={kills:p.kills,gold:p.gold,crystals:G.progress.crystals[realm.id]||0,t:G.t};
+    document.getElementById('hud').classList.remove('hidden');
+    updHUD();MODE='level';
+    return;
+  }
+  if(!MP.isHost&&d.type==='startLevel'){
+    const realm=REALMS.find(r=>r.id===d.realmId);
+    if(realm)startLevel(realm,d.lvNum);
+    return;
+  }
+  if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
   if(MP.isHost){
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4205,12 +4271,16 @@ function mpBroadcastState(){
       charPrimary:p.charPrimary,charAccent:p.charAccent,
       turbo:p.turbo||0,item:p.item,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
-    }:null)});
+    }:null),
+    projs:G.projs.slice(0,40).map(p=>({x:p.x,y:p.y,col:p.col,sz:p.sz||4,owner:p.owner||0})),
+  });
 }
 
 
 function mpApplyState(data){
   if(!data.players)return;
+  // Sync projectiles from host (render only — host handles collisions)
+  if(!MP.isHost&&data.projs)G.projs=data.projs.map(p=>({...p,life:1,maxLife:1,dx:0,dy:0}));
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
     if(!G.players[i])G.players[i]=createRemotePlayer('',i);
@@ -6837,13 +6907,35 @@ function drawRemotePlayer(rp){
   const primary=rp.charPrimary||col.primary;
   const accent=rp.charAccent||col.accent;
   const label=`P${idx+1}`;
+
+  // Invuln flash
+  if(rp.invuln>0&&Math.floor(rp.invuln*12)%2===0){ctx.restore();return;}
+
+  // Attack arc
+  if(rp.attacking&&rp.atkProg>0){
+    const ang=rp.atkAngle||0;
+    const sweep=Math.PI*.9;
+    const prog=rp.atkProg;
+    const a0=ang-sweep/2+sweep*(1-prog);
+    const a1=a0+sweep*prog;
+    ctx.strokeStyle=accent+'bb';ctx.lineWidth=3;ctx.shadowColor=accent;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(0,0,TL*.58,a0,a1);ctx.stroke();
+    // Blade tip
+    ctx.fillStyle='#ffffffcc';ctx.shadowBlur=12;
+    ctx.beginPath();ctx.arc(Math.cos(a0)*TL*.58,Math.sin(a0)*TL*.58,3,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  // Body
   ctx.fillStyle=primary;
   ctx.beginPath();ctx.ellipse(0,4,TL*.28,TL*.34,0,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(0,-TL*.24,TL*.22,0,Math.PI*2);ctx.fill();
   ctx.fillStyle=accent+'cc';ctx.fillRect(-TL*.15,-TL*.32,TL*.3,TL*.12);
+  // Label
   ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-12,-TL*.58,24,11);
   ctx.fillStyle=accent;ctx.font='bold 7px Cinzel,serif';
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,0,-TL*.525);
+  // HP bar
   const hpFrac=Math.max(0,rp.hp/rp.maxHp);
   ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-14,-TL*.46,28,4);
   ctx.fillStyle=hpFrac>.5?'#44cc44':hpFrac>.25?'#ccaa22':'#cc2222';
