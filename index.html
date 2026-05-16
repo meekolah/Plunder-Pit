@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.70';
+const VERSION='0.71';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3366,25 +3366,44 @@ function updatePlayer(dt){
     }
   });
 
-  // Item pickup — host only; clients receive removals via state broadcast
+  // Item pickup — host only. Checks ALL connected players' positions; effects are SHARED.
   const pendingDrops=[];
-  if(!MP.enabled||MP.isHost){G.lv.items=G.lv.items.filter(item=>{
+  if(!MP.enabled||MP.isHost){
+    const inLevel=p2=>p2&&p2.hp>0&&(p2===p||(p2.playerMode==='level'||p2.playerMode==='boss'));
+    const allPlayers=(G.players||[]).filter(inLevel);
+    if(!allPlayers.includes(p))allPlayers.unshift(p);
+  G.lv.items=G.lv.items.filter(item=>{
     if(item.hidden)return true;
-    if(dist(p,item)>TL*.65){if(item._keyMsg)item._keyMsg=false;return true;}
-    if(item.type==='gold'){p.gold+=item.val;addFT('+'+item.val+'g',item.x,item.y,'#f5c542');SFX.gold();}
+    // Find any player within pickup range
+    const picker=allPlayers.find(pl=>dist(pl,item)<=TL*.65);
+    if(!picker){if(item._keyMsg)item._keyMsg=false;return true;}
+    if(item.type==='gold'){
+      allPlayers.forEach(pl=>{pl.gold=(pl.gold||0)+item.val;});
+      addFT('+'+item.val+'g',item.x,item.y,'#f5c542');SFX.gold();
+    }
     else if(item.type==='crystal'){
       const rid=typeof item.realm==='string'?item.realm:item.realm?.id||G.curRealm?.id||'forsaken';
       G.progress.crystals[rid]=(G.progress.crystals[rid]||0)+1;
       addFT('+1 ✦',item.x,item.y,G.curRealm?.cc||'#cc88ff');
       SFX.crystal();checkUnlocks();
     }
-    else if(item.type==='food'){const h=Math.floor(Math.min(item.val,p.maxHp-p.hp));p.hp+=h;addFT('+'+h+' HP',item.x,item.y,'#44ff88');SFX.food();}
+    else if(item.type==='food'){
+      // Heal all alive players
+      let healed=0;
+      allPlayers.forEach(pl=>{
+        const h=Math.floor(Math.min(item.val,pl.maxHp-pl.hp));
+        if(h>0){pl.hp+=h;healed=Math.max(healed,h);}
+      });
+      if(healed>0)addFT('+'+healed+' HP',item.x,item.y,'#44ff88');
+      SFX.food();
+    }
     else if(item.type==='key'){
-      p.keys++;addFT('KEY',item.x,item.y,'#f5e642');spawnP(item.x,item.y,'#f5e642',6);SFX.key();
+      allPlayers.forEach(pl=>{pl.keys=(pl.keys||0)+1;});
+      addFT('KEY',item.x,item.y,'#f5e642');spawnP(item.x,item.y,'#f5e642',6);SFX.key();
     }
     else if(item.type==='chest'){
       if(item.locked){
-        if(p.keys>0){p.keys--;SFX.chest();pendingDrops.push(...openChest(item));}
+        if(picker.keys>0){picker.keys--;SFX.chest();pendingDrops.push(...openChest(item));}
         else if(!item._keyMsg){item._keyMsg=true;addFT('Need a key!',item.x,item.y,'#cc4444');return true;}
         else{return true;}
       } else {SFX.chest();pendingDrops.push(...openChest(item));}
@@ -3392,8 +3411,8 @@ function updatePlayer(dt){
     else if(item.type==='powerup'){
       const names={triple_shot:'3-Way Shot',rapid_fire:'Rapid Fire',fury:'Fury',barrier:'Barrier'};
       const durs={triple_shot:20,rapid_fire:18,fury:14,barrier:16};
-      if(p.item===null){
-        p.item=item.id;p.itemTimer=durs[item.id]||15;SFX.powerup();
+      if(picker.item===null||picker.item===undefined){
+        picker.item=item.id;picker.itemTimer=durs[item.id]||15;SFX.powerup();
         showMsg(`${names[item.id]||item.id} — ${durs[item.id]||15}s!`);
         addFT(names[item.id]||'POWER UP!',item.x,item.y-TL*.5,'#44ffcc');
         spawnP(item.x,item.y,'#44ffcc',14);
@@ -4403,7 +4422,7 @@ function mpBroadcastState(){
       x:p.x,y:p.y,hp:p.hp,maxHp:p.maxHp,invuln:p.invuln,
       facingX:p.facing?.x||1,facingY:p.facing?.y||0,
       charPrimary:p.charPrimary,charAccent:p.charAccent,
-      turbo:p.turbo||0,item:p.item,
+      turbo:p.turbo||0,item:p.item,gold:p.gold||0,keys:p.keys||0,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
       playerMode:MODE,
     }:null),
@@ -4502,7 +4521,7 @@ function mpApplyState(data){
         G.lv.enemies.push(e);byId.set(es.id,e);
       }
       if(!e)return;
-      e.x=lerp(e.x,es.x,.5);e.y=lerp(e.y,es.y,.5);
+      e.x=lerp(e.x,es.x,.25);e.y=lerp(e.y,es.y,.25);
       e.hp=es.hp;e.alive=!!es.alive;
       if(es.hf&&!e._wasHitFlash)SFX.hit(false);
       e._wasHitFlash=!!es.hf;
@@ -4523,9 +4542,18 @@ function mpApplyState(data){
       G.lv.enemies=G.lv.enemies.filter(e=>!e.eid||seen.has(e.eid));
     }
   }
-  // Full item list replacement — host is authoritative
+  // Full item list replacement — preserve existing items by position so bob doesn't reset
   if(!MP.isHost&&data.items&&G.lv?.items){
-    G.lv.items=data.items.map(a=>({type:a[0],x:a[1],y:a[2],val:a[3],realm:typeof a[4]==='string'?a[4]:undefined,id:typeof a[4]==='number'?a[4]:undefined,bob:Math.random()*Math.PI*2}));
+    const oldMap=new Map(G.lv.items.map(it=>[`${it.type}:${it.x}:${it.y}`,it]));
+    G.lv.items=data.items.map(a=>{
+      const key=`${a[0]}:${a[1]}:${a[2]}`;
+      const existing=oldMap.get(key);
+      if(existing){existing.val=a[3];return existing;}
+      return {type:a[0],x:a[1],y:a[2],val:a[3],
+        realm:typeof a[4]==='string'?a[4]:undefined,
+        id:typeof a[4]==='number'?a[4]:undefined,
+        bob:Math.random()*Math.PI*2};
+    });
   }
   // Spawner state sync (by index — array order is fixed at level gen)
   if(!MP.isHost&&data.spawners&&G.lv?.spawners){
@@ -4546,7 +4574,18 @@ function mpApplyState(data){
     });
   }
   data.players.forEach((snap,i)=>{
-    if(i===MP.localPlayerIdx)return;
+    if(i===MP.localPlayerIdx){
+      // Client: accept host as authoritative for HP/invuln/turbo/gold/keys (host runs damage & pickups)
+      if(snap&&!MP.isHost){
+        G.p.hp=snap.hp;G.p.maxHp=snap.maxHp;
+        if(typeof snap.invuln==='number')G.p.invuln=snap.invuln;
+        if(typeof snap.turbo==='number')G.p.turbo=snap.turbo;
+        if(typeof snap.gold==='number')G.p.gold=snap.gold;
+        if(typeof snap.keys==='number')G.p.keys=snap.keys;
+        if(snap.item!==undefined)G.p.item=snap.item;
+      }
+      return;
+    }
     if(!snap){G.players[i]=null;return;} // player disconnected — clear slot
     if(!G.players[i])G.players[i]=createRemotePlayer('',i);
     const rp=G.players[i];
