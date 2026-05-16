@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.52';
+const VERSION='0.53';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4095,25 +4095,28 @@ function mpHandleMessage(d){
   if(MP.isHost){
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
-        // Already known — resend welcome in case the first was dropped
+        // Already known (quick rejoin) — refresh ping, restore slot if nulled, resend welcome
         const ri=MP.remoteInputs[d.playerId];
-        mpSend({type:'welcome',playerId:d.playerId,playerIdx:ri.playerIdx,totalPlayers:G.players.length});
-        return;
+        ri.lastPing=Date.now();
+        if(!G.players[ri.playerIdx]){
+          const sx=HPSX*TL,sy=HPSY*TL;
+          G.players[ri.playerIdx]=createRemotePlayer(d.playerId,ri.playerIdx,sx,sy);
+        }
+        if(d.charPrimary){G.players[ri.playerIdx].charPrimary=d.charPrimary;G.players[ri.playerIdx].charAccent=d.charAccent;}
+        mpSend({type:'welcome',playerId:d.playerId,playerIdx:ri.playerIdx,
+          totalPlayers:G.players.length,hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
+        mpUpdateLobby();return;
       }
-      if(Object.keys(MP.remoteInputs).length>=MP_MAX-1){mpSend({type:'full',targetId:d.playerId});return;}
-      // Find lowest free player slot (handles gaps from disconnects)
+      // Find lowest free player slot
       let playerIdx=1;
       const usedSlots=new Set(Object.values(MP.remoteInputs).map(r=>r.playerIdx));
       while(usedSlots.has(playerIdx))playerIdx++;
       if(playerIdx>=MP_MAX){mpSend({type:'full',targetId:d.playerId});return;}
+      const sx=HPSX*TL||400,sy=HPSY*TL||400;
       MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx,lastPing:Date.now()};
-      const startX=G.lv?.playerStart?.x||(HPSX*TL)||400;
-      const startY=G.lv?.playerStart?.y||(HPSY*TL)||400;
-      while(G.players.length<=playerIdx)G.players.push(createRemotePlayer(d.playerId,playerIdx,startX,startY));
-      G.players[playerIdx]._peerId=d.playerId;G.players[playerIdx]._playerIdx=playerIdx;
-      // Apply client's chosen colors immediately
-      if(d.charPrimary)G.players[playerIdx].charPrimary=d.charPrimary;
-      if(d.charAccent)G.players[playerIdx].charAccent=d.charAccent;
+      // Always create fresh slot — handles null from previous eviction
+      G.players[playerIdx]=createRemotePlayer(d.playerId,playerIdx,sx,sy);
+      if(d.charPrimary){G.players[playerIdx].charPrimary=d.charPrimary;G.players[playerIdx].charAccent=d.charAccent;}
       MP.enabled=true;
       mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length,
         hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
@@ -4291,9 +4294,9 @@ function mpBroadcastState(){
     }:null),
     projs:G.projs.slice(0,60).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
-      vx:Math.round(pr.vx),vy:Math.round(pr.vy),
+      vx:Math.round(pr.vx||0),vy:Math.round(pr.vy||0),
       col:pr.col,sz:pr.sz||4,
-      owner:pr._remoteId||'host',
+      owner:pr._remoteId||MP.playerId,
     })),
   });
 }
