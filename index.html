@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.47';
+const VERSION='0.48';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4055,6 +4055,8 @@ function mpConnect(roomCode){
       });
       const st=document.getElementById('mp-status-text');
       if(st)st.textContent=MP.isHost?'Waiting for players...':'Joining...';
+      // Heartbeat so host can detect graceless disconnects
+      MP._ping=setInterval(()=>{if(MP.enabled||!MP.isHost)mpSend({type:'ping',playerId:MP.playerId});},5000);
       if(!MP.isHost){
         const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId,
       charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
@@ -4085,7 +4087,11 @@ function mpConnect(roomCode){
 
 
 function mpHandleMessage(d){
-  if(d.type==='ping')return;
+  if(d.type==='ping'){
+    if(MP.isHost&&d.playerId&&MP.remoteInputs[d.playerId])
+      MP.remoteInputs[d.playerId].lastPing=Date.now();
+    return;
+  }
   if(MP.isHost){
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4096,7 +4102,7 @@ function mpHandleMessage(d){
       }
       if(Object.keys(MP.remoteInputs).length>=MP_MAX-1){mpSend({type:'full',targetId:d.playerId});return;}
       const playerIdx=Object.keys(MP.remoteInputs).length+1;
-      MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx};
+      MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx,lastPing:Date.now()};
       const startX=G.lv?.playerStart?.x||(HPSX*TL)||400;
       const startY=G.lv?.playerStart?.y||(HPSY*TL)||400;
       while(G.players.length<=playerIdx)G.players.push(createRemotePlayer(d.playerId,playerIdx,startX,startY));
@@ -4111,6 +4117,7 @@ function mpHandleMessage(d){
     }
     if(d.type==='input'&&MP.remoteInputs[d.playerId]){
       const ri=MP.remoteInputs[d.playerId];
+      ri.lastPing=Date.now();
       ri.keys=d.keys||{};ri.mousePos=d.mousePos||ri.mousePos;ri.mouseBtn=d.mouseBtn||false;
       const rp=G.players[ri.playerIdx];
       if(rp&&d.px){
@@ -4234,6 +4241,18 @@ function createRemotePlayer(peerId,playerIdx,startX,startY){
 
 function mpProcessRemoteInputs(dt){
   if(!MP.isHost||!MP.enabled)return;
+  const now=Date.now();
+  // Evict clients that haven't sent anything in 12s (graceless disconnect)
+  Object.entries(MP.remoteInputs).forEach(([pid,ri])=>{
+    if(ri.lastPing&&now-ri.lastPing>12000){
+      const idx=ri.playerIdx;
+      G.players[idx]=null;
+      G.projs=G.projs.filter(p=>p._remoteId!==pid);
+      delete MP.remoteInputs[pid];
+      mpUpdateLobby();
+      showMsg(`Player ${idx+1} disconnected.`);
+    }
+  });
   Object.values(MP.remoteInputs).forEach(inp=>{
     const rp=G.players[inp.playerIdx];
     if(!rp||!rp._remote)return;
