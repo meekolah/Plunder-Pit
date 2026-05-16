@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.37';
+const VERSION='0.38';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -882,6 +882,7 @@ function drawHub(){
   // Draw players inside world-space transform so translate(rp.x,rp.y) works correctly
   G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
   drawPlayer2();
+  drawProjs();
   // Particles
   drawParts();
   ctx.restore(); // back to screen space
@@ -4114,6 +4115,11 @@ function mpHandleMessage(d){
         rp.atkProg=d.atkProg||0;
         rp.atkAngle=d.atkAngle||0;
       }
+      // Merge client projs into host render pool (tagged so they don't process collisions)
+      if(d.projs){
+        G.projs=G.projs.filter(p=>!p._remote);
+        d.projs.forEach(p=>G.projs.push({...p,vx:0,vy:0,life:0.1,maxLife:0.1,trail:[],_remote:true}));
+      }
       // Fire projectile for remote player if they attacked this frame
       if(rp&&d.didShoot&&(!rp._lastShoot||performance.now()-rp._lastShoot>300)){
         rp._lastShoot=performance.now();
@@ -4178,6 +4184,7 @@ function mpSendInput(){
     attacking:G.p.attacking||false,
     atkProg:G.p.atkProg||0,
     atkAngle:G.p.atkAngle||0,
+    projs:G.projs.slice(0,20).map(pr=>({x:Math.round(pr.x),y:Math.round(pr.y),col:pr.col,sz:pr.sz||4})),
   });
   MP._wasMouseBtn=mouseBtn;
 }
