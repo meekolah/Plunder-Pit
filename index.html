@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.61';
+const VERSION='0.62';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3811,7 +3811,8 @@ function mkEnemy(realm,x,y){
   const d=defs[rand(0,defs.length-1)];
   const sc=1+(G.curLvNum||0)*.3;
   const e={...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
-    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2,hitFlash:0};
+    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2,hitFlash:0,
+    eid:Math.random().toString(36).slice(2,8)}; // unique ID for MP sync
   const eliteChance=Math.min(0.45, 0.14+(G.curLvNum||0)*0.06);
   if(Math.random()<eliteChance)applyElite(e);
   return e;
@@ -4139,8 +4140,8 @@ function mpHandleMessage(d){
     const flat=d.m.split('').map(Number);
     const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
     const enemies=(d.en||[]).map(a=>({
-      type:a[0],x:a[1],y:a[2],hp:a[3],maxHp:a[4],atk:a[5],spd:a[6],
-      col:a[7],sz:a[8],tier:a[9]||1,
+      eid:a[0],type:a[1],x:a[2],y:a[3],hp:a[4],maxHp:a[5],atk:a[6],spd:a[7],
+      col:a[8],sz:a[9],tier:a[10]||1,
       alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
       dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
       facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
@@ -4217,6 +4218,7 @@ function mpHandleMessage(d){
         rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
         if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;}
+        if(d.playerMode)rp.playerMode=d.playerMode;
         if(d.attacking&&!rp.attacking)SFX.swing();
         rp.attacking=d.attacking||false;
         rp.atkProg=d.atkProg||0;
@@ -4305,6 +4307,7 @@ function mpSendInput(){
     atkProg:G.p.atkProg||0,
     atkAngle:G.p.atkAngle||0,
     charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,
+    playerMode:MODE,
     projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
@@ -4385,7 +4388,7 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
-    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0}):null),
+    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0}):null),
     lv_items:(G.lv?.items||[]).map((_,i)=>i),
   });
 }
@@ -4425,11 +4428,13 @@ function mpApplyState(data){
     if(newRemoteCount>lastCount)SFX.shoot(false);
     G._remoteProjCount=newRemoteCount;
   }
-  // Apply enemy state from host
+  // Apply enemy state from host — match by ID to survive array shifts from deaths
   if(!MP.isHost&&data.enemies&&G.lv?.enemies){
-    data.enemies.forEach((es,i)=>{
-      const e=G.lv.enemies[i];if(!e||!es)return;
-      e.x=lerp(e.x,es.x,.4);e.y=lerp(e.y,es.y,.4);
+    const byId=new Map(G.lv.enemies.map(e=>[e.eid,e]));
+    data.enemies.forEach(es=>{
+      if(!es)return;
+      const e=byId.get(es.id);if(!e)return;
+      e.x=lerp(e.x,es.x,.5);e.y=lerp(e.y,es.y,.5);
       e.hp=es.hp;e.alive=!!es.alive;
       if(es.hf&&!e._wasHitFlash)SFX.hit(false);
       e._wasHitFlash=!!es.hf;
@@ -4653,6 +4658,7 @@ function mpSendCurrentLevel(){
     sp:[G.lv.stairsPos.x,G.lv.stairsPos.y],
     rm:(G.lv.rooms||[]).slice(0,12).map(r=>[r.x,r.y,r.w,r.h]),
     en:(G.lv.enemies||[]).slice(0,40).map(e=>[
+      e.eid||Math.random().toString(36).slice(2,8),
       e.type,Math.round(e.x),Math.round(e.y),
       e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||14,e.tier||1
     ]),
@@ -6677,7 +6683,7 @@ function drawItems2(){
 
 function drawEnemies2(){
   G.lv.enemies.forEach(e=>{
-    if(e.hidden)return; // inside unrevealed vault — don't draw
+    if(e.hidden||e.alive===false)return; // inside unrevealed vault — don't draw
     ctx.save();ctx.translate(e.x,e.y);
     // Stagger tilt — lean in the knockback direction, fades as stagger expires
     if(e.stagger>0&&e.staggerDur>0&&e.staggerDir!==undefined){
