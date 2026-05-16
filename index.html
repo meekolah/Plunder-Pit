@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.57';
+const VERSION='0.58';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4108,19 +4108,16 @@ function mpHandleMessage(d){
   }
   if(d.type==='readyUpdate'){RC.ready=new Set(d.readyIds);mpUpdateReadyList();return;}
   if(d.type==='countdown'){
-    const ov=document.getElementById('mp-ready-overlay');
-    if(d.n>0){
-      if(ov){const pl=ov.querySelector('#rc-player-list');if(pl)pl.innerHTML=`<div style="font-size:52px;text-align:center;color:#ffcc44">${d.n}</div>`;}
-      else showMsg(String(d.n));
-    }else{mpCloseReadyOverlay();RC.active=false;}
-    return;
-  }
-  if(!MP.isHost&&d.type==='levelLoading'){
-    const list=document.getElementById('rc-player-list');
-    if(list)list.innerHTML='<div style="text-align:center;color:#aaa;font-size:14px">Loading level...</div>';
+    if(!MP.isHost){
+      const pl=document.getElementById('rc-player-list');
+      if(d.n>0){
+        if(pl)pl.innerHTML=`<div style="font-size:52px;text-align:center;color:#ffcc44">${d.n}</div>`;
+      }else{mpCloseReadyOverlay();RC.active=false;}
+    }
     return;
   }
   if(!MP.isHost&&d.type==='syncLevel'){
+    mpCloseReadyOverlay();RC.active=false;
     showMsg('Loading level...');
     try{
     const realm=REALMS.find(r=>r.id===d.realmId);
@@ -4148,8 +4145,6 @@ function mpHandleMessage(d){
     updHUD();MODE=d.isBoss?'boss':'level';
     showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
     MP._levelReqT=0;
-    // Confirm loaded to host
-    mpSend({type:'loaded',playerId:MP.playerId});
     }catch(e){showMsg('Level sync error: '+e.message);}
     return;
   }
@@ -4159,11 +4154,9 @@ function mpHandleMessage(d){
     }
     if(d.type==='ready'&&RC.active){
       RC.ready.add(d.playerId);
+      showMsg(`P ready (${RC.ready.size} total)`);
       mpSend({type:'readyUpdate',readyIds:[...RC.ready]});
       mpUpdateReadyList();mpCheckAllReady();return;
-    }
-    if(d.type==='loaded'&&RC.active){
-      RC.loaded.add(d.playerId);mpCheckAllLoaded();return;
     }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4546,24 +4539,20 @@ function mpReadyCheck(realm,lvNum){
 function mpCheckAllReady(){
   const total=1+Object.keys(MP.remoteInputs).length;
   if(RC.ready.size<total)return;
-  // Everyone ready — load level then wait for loaded confirmations
-  RC.loaded=new Set([MP.playerId]);
-  const prog=G.progress.rp[RC.realm.id];
+  showMsg('All ready — sending level...');
   if(RC.lvNum===-1)startBoss();
   else startLevel(RC.realm,RC.lvNum);
-  mpSend({type:'levelLoading'});
-}
-
-function mpCheckAllLoaded(){
-  const total=1+Object.keys(MP.remoteInputs).length;
-  if(RC.loaded.size<total)return;
-  // Start countdown on all screens
-  RC.countdown=3;
-  mpSend({type:'countdown',n:3});
+  // Give clients 3 seconds to load, then start
+  let n=3;
+  const el=document.getElementById('rc-player-list');
+  if(el)el.innerHTML=`<div style="font-size:52px;text-align:center;color:#ffcc44">${n}</div>`;
+  mpSend({type:'countdown',n});
   const tick=setInterval(()=>{
-    RC.countdown--;
-    mpSend({type:'countdown',n:RC.countdown});
-    if(RC.countdown<=0){clearInterval(tick);RC.active=false;}
+    n--;
+    mpSend({type:'countdown',n});
+    const pl=document.getElementById('rc-player-list');
+    if(pl&&n>0)pl.innerHTML=`<div style="font-size:52px;text-align:center;color:#ffcc44">${n}</div>`;
+    if(n<=0){clearInterval(tick);RC.active=false;mpCloseReadyOverlay();}
   },1000);
 }
 
@@ -4631,6 +4620,7 @@ function mpCloseReadyOverlay(){document.getElementById('mp-ready-overlay')?.remo
 function mpSendCurrentLevel(){
   if(!G.lv||!G.curRealm)return;
   const realm=G.curRealm;
+  showMsg('Sending level data...');
   // Trim to essentials to stay well under Ably message limit
   mpSend({type:'syncLevel',
     realmId:realm.id,lvNum:G.curLvNum,isBoss:G.lv.isBoss?1:0,
