@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.58';
+const VERSION='0.60';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4094,6 +4094,19 @@ function mpConnect(roomCode){
 
 
 function mpHandleMessage(d){
+  // Diagnostic — show non-state messages on client so we can trace the flow
+  if(!MP.isHost&&d.type!=='state'&&d.type!=='ping')showMsg('recv:'+d.type);
+  // Update persistent MP debug indicator
+  if(!MP.isHost){
+    let dbg=document.getElementById('mp-debug');
+    if(!dbg){
+      dbg=document.createElement('div');
+      dbg.id='mp-debug';
+      dbg.style.cssText='position:fixed;top:8px;right:8px;background:rgba(0,0,0,.7);color:#0f0;font-family:monospace;font-size:11px;padding:6px 10px;border-radius:4px;z-index:9999;pointer-events:none;';
+      document.body.appendChild(dbg);
+    }
+    dbg.textContent=`MODE:${MODE} lv:${G.lv?'Y':'N'} enabled:${MP.enabled?'Y':'N'}`;
+  }
   if(d.type==='ping'){
     if(MP.isHost&&d.playerId&&MP.remoteInputs[d.playerId])
       MP.remoteInputs[d.playerId].lastPing=Date.now();
@@ -4118,34 +4131,39 @@ function mpHandleMessage(d){
   }
   if(!MP.isHost&&d.type==='syncLevel'){
     mpCloseReadyOverlay();RC.active=false;
-    showMsg('Loading level...');
+    showMsg('=== LEVEL ARRIVED ===');
     try{
-    const realm=REALMS.find(r=>r.id===d.realmId);
+    const realm=REALMS.find(r=>r.id===d.rid);
     if(!realm){showMsg('Level sync error: realm not found');return;}
-    G.curRealm=realm;G.curLvNum=d.lvNum;
-    const flat=d.map.split('').map(Number);
+    G.curRealm=realm;G.curLvNum=d.ln;
+    const flat=d.m.split('').map(Number);
     const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
-    const enemies=(d.enemies||[]).map(e=>({
-      type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.mhp,atk:e.atk,spd:e.spd,
-      col:e.col,sz:e.sz,tier:e.tier||1,
+    const enemies=(d.en||[]).map(a=>({
+      type:a[0],x:a[1],y:a[2],hp:a[3],maxHp:a[4],atk:a[5],spd:a[6],
+      col:a[7],sz:a[8],tier:a[9]||1,
       alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
       dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
       facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
     }));
-    G.lv={map,rooms:d.rooms||[],playerStart:d.playerStart,stairsPos:d.stairsPos,
-      torches:[],secretPaths:[],enemies,items:d.items||[],spawners:[],
-      hazards:[],warnings:[],ff:null,isBoss:!!d.isBoss,realm,decos:[],barrels:[],exitTimer:0};
+    const items=(d.it||[]).map(a=>({type:a[0],x:a[1],y:a[2],val:a[3]}));
+    const rooms=(d.rm||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],cx:a[0]+a[2]/2,cy:a[1]+a[3]/2}));
+    const ps={x:d.ps[0],y:d.ps[1]};
+    const sp={x:d.sp[0],y:d.sp[1]};
+    G.lv={map,rooms,playerStart:ps,stairsPos:sp,
+      torches:[],secretPaths:[],enemies,items,spawners:[],
+      hazards:[],warnings:[],ff:null,isBoss:!!d.bs,realm,decos:[],barrels:[],exitTimer:0};
     G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
     const off=SPAWN_OFFSETS[MP.localPlayerIdx]||{x:0,y:0};
-    G.p.x=d.playerStart.x+off.x;G.p.y=d.playerStart.y+off.y;
+    G.p.x=ps.x+off.x;G.p.y=ps.y+off.y;
     G.cam.x=G.p.x-cv.width/2;G.cam.y=G.p.y-cv.height/2;
     G.p.invuln=.6;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
     G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress?.crystals?.[realm.id]||0,t:G.t};
     document.getElementById('hud').classList.remove('hidden');
-    updHUD();MODE=d.isBoss?'boss':'level';
-    showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
+    updHUD();MODE=d.bs?'boss':'level';
+    showRLabel(realm.name+(d.ln>0?' — Level 2':' — Level 1'));
     MP._levelReqT=0;
-    }catch(e){showMsg('Level sync error: '+e.message);}
+    showMsg('LOADED — MODE='+MODE);
+    }catch(e){showMsg('Sync error: '+e.message);}
     return;
   }
   if(MP.isHost){
@@ -4562,6 +4580,9 @@ function drawReadyOverlay(){
   const ov=document.createElement('div');
   ov.id='mp-ready-overlay';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;font-family:Cinzel,serif;color:#fff;gap:16px;';
+  // Double-tap overlay to dismiss if stuck
+  let _tapT=0;
+  ov.addEventListener('click',()=>{const now=Date.now();if(now-_tapT<400){mpCloseReadyOverlay();RC.active=false;}_tapT=now;});
   const title=document.createElement('div');
   title.style.cssText='font-size:22px;letter-spacing:.15em;color:#ffcc66;margin-bottom:8px;';
   title.textContent=(RC.realm?.name||'Level')+' — Ready Check';
@@ -4621,19 +4642,21 @@ function mpSendCurrentLevel(){
   if(!G.lv||!G.curRealm)return;
   const realm=G.curRealm;
   showMsg('Sending level data...');
-  // Trim to essentials to stay well under Ably message limit
-  mpSend({type:'syncLevel',
-    realmId:realm.id,lvNum:G.curLvNum,isBoss:G.lv.isBoss?1:0,
-    map:G.lv.map.flat().join(''),
-    playerStart:G.lv.playerStart,stairsPos:G.lv.stairsPos,
-    rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
-    enemies:G.lv.enemies.slice(0,60).map(e=>({
-      type:e.type,x:Math.round(e.x),y:Math.round(e.y),
-      hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
-      col:e.col,sz:e.sz,tier:e.tier||1,
-    })),
-    items:(G.lv.items||[]).slice(0,30).map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0})),
-  });
+  // Compact arrays instead of objects to minimize JSON size
+  const payload={type:'syncLevel',
+    rid:realm.id,ln:G.curLvNum,bs:G.lv.isBoss?1:0,
+    m:G.lv.map.flat().join(''),
+    ps:[G.lv.playerStart.x,G.lv.playerStart.y],
+    sp:[G.lv.stairsPos.x,G.lv.stairsPos.y],
+    rm:(G.lv.rooms||[]).slice(0,12).map(r=>[r.x,r.y,r.w,r.h]),
+    en:(G.lv.enemies||[]).slice(0,40).map(e=>[
+      e.type,Math.round(e.x),Math.round(e.y),
+      e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||14,e.tier||1
+    ]),
+    it:(G.lv.items||[]).slice(0,20).map(i=>[i.type,Math.round(i.x),Math.round(i.y),i.val||0]),
+  };
+  showMsg('lv size: '+JSON.stringify(payload).length+'B');
+  mpSend(payload);
 }
 
 function buildFlowField(){
