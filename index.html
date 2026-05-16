@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.46';
+const VERSION='0.47';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4270,6 +4270,7 @@ function mpBroadcastState(){
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
       col:pr.col,sz:pr.sz||4,
+      owner:pr._remoteId||'host',
     })),
   });
 }
@@ -4281,12 +4282,14 @@ function mpApplyState(data){
   if(!MP.isHost&&data.projs){
     const lastCount=G._remoteProjCount||0;
     G.projs=G.projs.filter(p=>p._local);
-    data.projs.forEach(pr=>G.projs.push({
-      ...pr,life:0.5,maxLife:0.5,trail:[],_remote:true,
-    }));
-    // Only play sound when proj count genuinely increases
-    if(data.projs.length>lastCount)SFX.shoot(false);
-    G._remoteProjCount=data.projs.length;
+    data.projs
+      .filter(pr=>pr.owner!==MP.playerId) // skip own projs echoed back from host
+      .forEach(pr=>G.projs.push({
+        ...pr,life:0.5,maxLife:0.5,trail:[],_remote:true,
+      }));
+    const newRemoteCount=data.projs.filter(pr=>pr.owner!==MP.playerId).length;
+    if(newRemoteCount>lastCount)SFX.shoot(false);
+    G._remoteProjCount=newRemoteCount;
   }
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
