@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.66';
+const VERSION='0.67';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1438,7 +1438,8 @@ function mkEnemyByType(type,realm,x,y){
   if(type==='grunt_light')return mkGrunt(realm,false,x,y);
   const d=realm.ed.find(e=>e.type===type)||realm.ed[0];
   return{...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
-    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2+Math.random()*1.5,hitFlash:0};
+    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2+Math.random()*1.5,hitFlash:0,alive:true,
+    eid:Math.random().toString(36).slice(2,8)};
 }
 
 function mkSpawnerObj(tx,ty,realm,lvNum,opts={}){
@@ -3734,12 +3735,14 @@ function mkGrunt(realm,isHeavy,x,y,spawnerRef=null){
   if(isHeavy){
     e={...def,type:'grunt_heavy',
       hp:Math.floor(85*sc),maxHp:Math.floor(85*sc),atk:Math.floor(16*sc),
-      spd:42,xp:22,g:[12,25],sz:.78,
+      spd:42,xp:22,g:[12,25],sz:.78,alive:true,
+      eid:Math.random().toString(36).slice(2,8),
       x,y,vx:0,vy:0,state:'idle',atkTimer:0,hitFlash:0,spawnerRef};
   } else {
     e={...def,type:'grunt_light',
       hp:Math.floor(32*sc),maxHp:Math.floor(32*sc),atk:Math.floor(9*sc),
-      spd:100,xp:10,g:[3,10],sz:.42,
+      spd:100,xp:10,g:[3,10],sz:.42,alive:true,
+      eid:Math.random().toString(36).slice(2,8),
       x,y,vx:0,vy:0,state:'idle',atkTimer:0,hitFlash:0,spawnerRef};
   }
   const eliteChance=Math.min(0.40, 0.12+(G.curLvNum||0)*0.05);
@@ -3812,7 +3815,8 @@ function mkBossMinion(realm,x,y){
   const d=(safe.length?safe:realm.ed)[rand(0,(safe.length||realm.ed.length)-1)];
   const sc=1+(G.curLvNum||0)*.3;
   return{...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
-    x,y,vx:0,vy:0,state:'chase',atkTimer:0,atkTimer2:2,hitFlash:0};
+    x,y,vx:0,vy:0,state:'chase',atkTimer:0,atkTimer2:2,hitFlash:0,alive:true,
+    eid:Math.random().toString(36).slice(2,8)};
 }
 
 function mkEnemy(realm,x,y){
@@ -5011,7 +5015,8 @@ function explodeSuicideBomber(e){
       const a=Math.PI*(ci+.25);
       const mx=e.x+Math.cos(a)*TL*.9,my=e.y+Math.sin(a)*TL*.9;
       G.lv.enemies.push({...e,elite:false,eliteChain:false,
-        hp:12,maxHp:12,atk:Math.floor(e.atk*.5),sz:e.sz*.6,
+        hp:12,maxHp:12,atk:Math.floor(e.atk*.5),sz:e.sz*.6,alive:true,
+        eid:Math.random().toString(36).slice(2,8),
         x:mx,y:my,vx:Math.cos(a)*80,vy:Math.sin(a)*80,state:'chase',
         name:'Mini Bomber',col:'#ff4400',out:'#ff8800'});
     }
