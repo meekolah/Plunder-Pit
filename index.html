@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.65';
+const VERSION='0.66';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4159,8 +4159,15 @@ function mpHandleMessage(d){
     const rooms=(d.rm||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],cx:a[0]+a[2]/2,cy:a[1]+a[3]/2}));
     const ps={x:d.ps[0],y:d.ps[1]};
     const sp={x:d.sp[0],y:d.sp[1]};
+    const spawners=(d.sp2||[]).map(a=>({
+      x:a[0],y:a[1],tx:Math.round(a[0]/TL),ty:Math.round(a[1]/TL),
+      hp:a[2],maxHp:a[3],hp1:2,maxHp1:2,
+      alive:true,activated:false,timer:a[4]*.5,
+      interval:a[4],maxGrunts:a[5],tier:a[6]||1,
+      grunts:[],realm,lvNum:d.ln,
+    }));
     G.lv={map,rooms,playerStart:ps,stairsPos:sp,
-      torches:[],secretPaths:[],enemies,items,spawners:[],
+      torches:[],secretPaths:[],enemies,items,spawners,
       hazards:[],warnings:[],ff:null,isBoss:!!d.bs,realm,
       decos:[],barrels:[],exitTimer:0,
       switches:[],doors:[],boss:null,bossPortal:null,bossPortalTimer:0,
@@ -4678,12 +4685,13 @@ function mpSendCurrentLevel(){
     ps:[G.lv.playerStart.x,G.lv.playerStart.y],
     sp:[G.lv.stairsPos.x,G.lv.stairsPos.y],
     rm:(G.lv.rooms||[]).slice(0,12).map(r=>[r.x,r.y,r.w,r.h]),
-    en:(G.lv.enemies||[]).slice(0,40).map(e=>[
+    en:(G.lv.enemies||[]).map(e=>[
       e.eid||Math.random().toString(36).slice(2,8),
       e.type,Math.round(e.x),Math.round(e.y),
-      e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||14,e.tier||1
+      e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||.5,e.tier||1
     ]),
     it:(G.lv.items||[]).slice(0,20).map(i=>[i.type,Math.round(i.x),Math.round(i.y),i.val||0]),
+    sp2:(G.lv.spawners||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.hp,s.maxHp,s.interval,s.maxGrunts,s.tier||1]),
   };
   showMsg('lv size: '+JSON.stringify(payload).length+'B');
   mpSend(payload);
