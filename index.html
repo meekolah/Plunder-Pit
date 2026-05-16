@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.42';
+const VERSION='0.46';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4059,7 +4059,7 @@ function mpConnect(roomCode){
         const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId,
       charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
         sendJoin();
-        MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},2000);
+        MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},3000);
         MP._joinTimeout=setTimeout(()=>{
           if(!MP.enabled){
             clearInterval(MP._joinRetry);
@@ -4094,7 +4094,7 @@ function mpHandleMessage(d){
         mpSend({type:'welcome',playerId:d.playerId,playerIdx:ri.playerIdx,totalPlayers:G.players.length});
         return;
       }
-      if(Object.keys(MP.remoteInputs).length>=MP_MAX-1)return;
+      if(Object.keys(MP.remoteInputs).length>=MP_MAX-1){mpSend({type:'full',targetId:d.playerId});return;}
       const playerIdx=Object.keys(MP.remoteInputs).length+1;
       MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx};
       const startX=G.lv?.playerStart?.x||(HPSX*TL)||400;
@@ -4124,16 +4124,27 @@ function mpHandleMessage(d){
       }
       // Replace client projs in host render pool each input (no ghost accumulation)
       if(d.projs){
-        const prevCount=G.projs.filter(p=>p._remote).length;
-        G.projs=G.projs.filter(p=>!p._remote);
+        // Per-client filter — only remove THIS client's old projs, leave others alone
+        G.projs=G.projs.filter(p=>p._remoteId!==d.playerId);
         d.projs.forEach(p=>G.projs.push({
-          ...p,life:0.12,maxLife:0.12,trail:[],_remote:true,
+          ...p,life:0.5,maxLife:0.5,trail:[],_remoteId:d.playerId,
         }));
-        if(d.projs.length>prevCount)SFX.shoot(false);
+        const newCount=d.projs.length;
+        const prevCount=ri._lastProjCount||0;
+        if(newCount>prevCount)SFX.shoot(false);
+        ri._lastProjCount=newCount;
       }
     }
   } else {
     // CLIENT receives from host
+    if(d.type==='full'&&d.targetId===MP.playerId){
+      clearInterval(MP._joinRetry);clearTimeout(MP._joinTimeout);clearInterval(MP._ping);
+      MP.ably?.connection.close();MP.channel=null;MP.status='offline';
+      const st=document.getElementById('mp-status-text');
+      if(st)st.textContent='Room is full — max 4 players.';
+      showMsg('Room is full.');
+      return;
+    }
     if(d.type==='welcome'&&d.playerId===MP.playerId){
       clearInterval(MP._joinRetry);clearTimeout(MP._joinTimeout);
       MP.localPlayerIdx=d.playerIdx;
@@ -4182,7 +4193,9 @@ function mpJoin(){
 function mpSendInput(){
   if(MP.isHost||!MP.enabled)return;
   const now=performance.now();
-  if(now-(MP._lastInputSend||0)<33)return;
+  // Scale throttle with player count to reduce channel congestion
+  const throttle=G.players.length>2?50:33;
+  if(now-(MP._lastInputSend||0)<throttle)return;
   MP._lastInputSend=now;
   mpSend({type:'input',playerId:MP.playerId,
     keys:{...keys},mousePos:{...mousePos},mouseBtn,
@@ -4253,7 +4266,7 @@ function mpBroadcastState(){
       turbo:p.turbo||0,item:p.item,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
     }:null),
-    projs:G.projs.filter(p=>!p._remote).slice(0,40).map(pr=>({
+    projs:G.projs.slice(0,60).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
       col:pr.col,sz:pr.sz||4,
@@ -4266,12 +4279,14 @@ function mpApplyState(data){
   if(!data.players)return;
   // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
-    const prevCount=G.projs.filter(p=>p._remote).length;
+    const lastCount=G._remoteProjCount||0;
     G.projs=G.projs.filter(p=>p._local);
     data.projs.forEach(pr=>G.projs.push({
-      ...pr,life:0.12,maxLife:0.12,trail:[],_remote:true,
+      ...pr,life:0.5,maxLife:0.5,trail:[],_remote:true,
     }));
-    if(data.projs.length>prevCount)SFX.shoot(false);
+    // Only play sound when proj count genuinely increases
+    if(data.projs.length>lastCount)SFX.shoot(false);
+    G._remoteProjCount=data.projs.length;
   }
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
@@ -7506,7 +7521,7 @@ function loop(ts){
       updParts(dt);
       // Simple hub projectile movement — no collision, just fly and expire
       G.projs=G.projs.filter(pr=>{
-        if(!pr._remote){
+        if(!pr._remote&&!pr._remoteId){
           pr.trail.unshift({x:pr.x,y:pr.y});
           if(pr.trail.length>6)pr.trail.pop();
         }
