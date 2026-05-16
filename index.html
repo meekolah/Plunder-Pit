@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.32';
+const VERSION='0.33';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -879,13 +879,12 @@ function drawHub(){
   ctx.fillRect(DEV_X-TL*.3,DEV_Y-TL*.3,TL*.6,TL*.6);
   ctx.globalAlpha=1;
 
+  // Draw players inside world-space transform so translate(rp.x,rp.y) works correctly
+  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
+  drawPlayer2();
   // Particles
   drawParts();
   ctx.restore(); // back to screen space
-
-  // Draw players in screen space (after restore so cam isn't double-applied)
-  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
-  drawPlayer2();
 
   // Joystick (interact button instead of attack)
   drawJoy();
@@ -6845,7 +6844,8 @@ function drawProjs(){
 
 function drawRemotePlayer(rp){
   if(!rp||rp.hp<=0)return;
-  ctx.save();ctx.translate(rp.x-G.cam.x,rp.y-G.cam.y);
+  // Called in world-space context — use absolute coords (same as drawPlayer2)
+  ctx.save();ctx.translate(rp.x,rp.y);
   const idx=rp._playerIdx||1;
   const col=MP_COLORS[idx]||MP_COLORS[1];
   const primary=rp.charPrimary||col.primary;
