@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.27';
+const VERSION='0.28';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2819,31 +2819,29 @@ function drawSummary(){
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
-  // Notify clients — send full level data so they're in the SAME world
+  // Notify clients — compressed level data to stay under Ably 16KB limit
   if(MP.isHost&&MP.enabled){
     mpSend({type:'syncLevel',
       realmId:realm.id,lvNum,
-      map:G.lv.map,
-      rooms:G.lv.rooms,
+      map:G.lv.map.flat().join(''), // compact string instead of 2D array
       playerStart:G.lv.playerStart,
       stairsPos:G.lv.stairsPos,
-      torches:G.lv.torches,
-      secretPaths:G.lv.secretPaths,
+      rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
+      torches:G.lv.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:t.wall?1:0,side:t.side?1:0})),
+      secretPaths:G.lv.secretPaths||[],
       enemies:G.lv.enemies.map(e=>({
-        type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.maxHp,
-        atk:e.atk,spd:e.spd,col:e.col,sz:e.sz,tier:e.tier||1,
-        dir:e.dir||0,alive:true,hidden:e.hidden||false,
-        hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
+        type:e.type,x:Math.round(e.x),y:Math.round(e.y),
+        hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
+        col:e.col,sz:e.sz,tier:e.tier||1,
+        dir:e.dir||0,hidden:e.hidden?1:0,state:e.state||'idle',
       })),
-      items:G.lv.items,
+      items:G.lv.items.map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0,realm:i.realm||''}) ),
       spawners:G.lv.spawners.map(s=>({
-        x:s.x,y:s.y,tx:s.tx,ty:s.ty,hp:s.hp,maxHp:s.maxHp,
-        alive:s.alive,activated:s.activated,timer:s.timer,
-        interval:s.interval,maxGrunts:s.maxGrunts,
-        hp1:s.hp1,maxHp1:s.maxHp1,tier:s.tier||1,
-        grunts:[],realm:realm.id,lvNum,
+        tx:s.tx,ty:s.ty,x:s.x,y:s.y,hp:s.hp,mhp:s.maxHp,
+        alive:s.alive?1:0,activated:s.activated?1:0,
+        timer:s.timer,interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,
       })),
-      isBoss:G.lv.isBoss||false,
+      isBoss:G.lv.isBoss?1:0,
     });
   }
   // Place recoverable death pile if one exists for this floor
@@ -4118,29 +4116,37 @@ function mpHandleMessage(d){
     const realm=REALMS.find(r=>r.id===d.realmId);
     if(!realm)return;
     G.curRealm=realm;G.curLvNum=d.lvNum;
-    // Reconstruct enemies with full properties from their type definitions
-    const enemies=d.enemies.map(ed=>{
-      const base=mkEnemy?.(realm,d.lvNum,ed.type)||{};
-      return{...base,...ed,alive:true,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
-        dyingTimer:0,parts:[],_chainKb:false,invuln:0,atkTimer:0};
-    });
+    // Decode compact map string back to 2D array
+    const flat=d.map.split('').map(Number);
+    const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
+    // Reconstruct torches
+    const torches=d.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:!!t.wall,side:!!t.side}));
+    // Reconstruct enemies with all fields the update loop needs
+    const enemies=d.enemies.map(e=>({
+      type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.mhp,atk:e.atk,spd:e.spd,
+      col:e.col,sz:e.sz,tier:e.tier||1,dir:e.dir||0,
+      alive:true,hidden:!!e.hidden,hitFlash:0,stagger:0,
+      kbTimer:0,vx:0,vy:0,dyingTimer:0,invuln:0,atkTimer:0,
+      state:e.state||'idle',timer:0,chargeT:0,
+      facing:{x:0,y:1},parts:[],_chainKb:false,
+    }));
     // Reconstruct spawners
-    const spawners=d.spawners.map(sd=>{
-      const r=REALMS.find(r=>r.id===sd.realm);
-      return{...sd,grunts:[],realm:r,
-        hp1:sd.hp1??2,maxHp1:sd.maxHp1??2,tier:sd.tier||1};
-    });
-    G.lv={map:d.map,rooms:d.rooms,playerStart:d.playerStart,
-      stairsPos:d.stairsPos,torches:d.torches,
-      secretPaths:d.secretPaths||[],enemies,items:d.items||[],
-      spawners,hazards:[],warnings:[],ff:null,
-      isBoss:d.isBoss||false,realm,
-      decos:[],barrels:[],exitTimer:0};
+    const spawners=d.spawners.map(s=>({
+      x:s.x,y:s.y,tx:s.tx,ty:s.ty,
+      hp:s.hp,maxHp:s.mhp,hp1:2,maxHp1:2,
+      alive:!!s.alive,activated:!!s.activated,
+      timer:s.timer,interval:s.interval,maxGrunts:s.maxGrunts,
+      tier:s.tier||1,grunts:[],realm,lvNum:d.lvNum,
+    }));
+    G.lv={map,rooms:d.rooms,playerStart:d.playerStart,stairsPos:d.stairsPos,
+      torches,secretPaths:d.secretPaths||[],enemies,
+      items:d.items||[],spawners,hazards:[],warnings:[],ff:null,
+      isBoss:!!d.isBoss,realm,decos:[],barrels:[],exitTimer:0};
     G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
     const p=G.p;
     p.x=d.playerStart.x;p.y=d.playerStart.y;
     G.cam.x=p.x-cv.width/2;G.cam.y=p.y-cv.height/2;
-    p.invuln=.6;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
+    p.invuln=.8;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
     G.floorStats={kills:p.kills,gold:p.gold,crystals:G.progress.crystals[realm.id]||0,t:G.t};
     document.getElementById('hud').classList.remove('hidden');
     updHUD();MODE='level';
