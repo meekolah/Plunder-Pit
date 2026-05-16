@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.48';
+const VERSION='0.51';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4101,7 +4101,11 @@ function mpHandleMessage(d){
         return;
       }
       if(Object.keys(MP.remoteInputs).length>=MP_MAX-1){mpSend({type:'full',targetId:d.playerId});return;}
-      const playerIdx=Object.keys(MP.remoteInputs).length+1;
+      // Find lowest free player slot (handles gaps from disconnects)
+      let playerIdx=1;
+      const usedSlots=new Set(Object.values(MP.remoteInputs).map(r=>r.playerIdx));
+      while(usedSlots.has(playerIdx))playerIdx++;
+      if(playerIdx>=MP_MAX){mpSend({type:'full',targetId:d.playerId});return;}
       MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx,lastPing:Date.now()};
       const startX=G.lv?.playerStart?.x||(HPSX*TL)||400;
       const startY=G.lv?.playerStart?.y||(HPSY*TL)||400;
@@ -4200,7 +4204,6 @@ function mpJoin(){
 function mpSendInput(){
   if(MP.isHost||!MP.enabled)return;
   const now=performance.now();
-  // Scale throttle with player count to reduce channel congestion
   const throttle=G.players.length>2?50:33;
   if(now-(MP._lastInputSend||0)<throttle)return;
   MP._lastInputSend=now;
@@ -4244,7 +4247,7 @@ function mpProcessRemoteInputs(dt){
   const now=Date.now();
   // Evict clients that haven't sent anything in 12s (graceless disconnect)
   Object.entries(MP.remoteInputs).forEach(([pid,ri])=>{
-    if(ri.lastPing&&now-ri.lastPing>12000){
+    if(ri.lastPing&&now-ri.lastPing>30000){
       const idx=ri.playerIdx;
       G.players[idx]=null;
       G.projs=G.projs.filter(p=>p._remoteId!==pid);
@@ -4278,6 +4281,7 @@ function mpBroadcastState(){
   if(now-MP.lastSync<MP.SYNC_MS)return;
   MP.lastSync=now;
   mpSend({type:'state',mode:MODE,
+    connectedIds:Object.keys(MP.remoteInputs),
     players:G.players.map(p=>p?{
       x:p.x,y:p.y,hp:p.hp,maxHp:p.maxHp,invuln:p.invuln,
       facingX:p.facing?.x||1,facingY:p.facing?.y||0,
@@ -4297,6 +4301,15 @@ function mpBroadcastState(){
 
 function mpApplyState(data){
   if(!data.players)return;
+  // Detect if host has evicted us — re-join automatically
+  if(!MP.isHost&&MP.enabled&&data.connectedIds&&
+     !data.connectedIds.includes(MP.playerId)){
+    MP.enabled=false;
+    showMsg('Reconnecting...');
+    mpSend({type:'join',playerId:MP.playerId,
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
+    return;
+  }
   // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
     const lastCount=G._remoteProjCount||0;
