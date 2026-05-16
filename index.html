@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.56';
+const VERSION='0.57';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -620,10 +620,12 @@ function updateHubWalk(dt){
         if(!G.progress.unlocked.includes(realm.id)){showMsg(`Requires ${realm.unlockCost} crystals`);return;}
         const prog=G.progress.rp[realm.id];
         G.curRealm=realm;
-        if(prog.bossDown){
-          showMsg(`Re-entering ${realm.name} — farm crystals!`);
-          startLevel(realm,0);return;
+        const lvNum=prog.bossDown?0:prog.lvDone>=realm.lvs?-1:prog.lvDone;
+        // MP: trigger ready check instead of entering directly
+        if(MP.isHost&&MP.enabled){
+          mpReadyCheck(realm,lvNum);return;
         }
+        if(prog.bossDown){showMsg(`Re-entering ${realm.name} — farm crystals!`);startLevel(realm,0);return;}
         if(prog.lvDone>=realm.lvs)startBoss();else startLevel(realm,prog.lvDone);
       } else {
         shopAction='hub';openShop('Return to Tower');
@@ -4097,7 +4099,27 @@ function mpHandleMessage(d){
       MP.remoteInputs[d.playerId].lastPing=Date.now();
     return;
   }
-  if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
+  if(!MP.isHost&&d.type==='returnHub'){returnHub();mpCloseReadyOverlay();return;}
+  // Ready check messages
+  if(!MP.isHost&&d.type==='readyCheck'){
+    const realm=REALMS.find(r=>r.id===d.realmId);if(!realm)return;
+    RC.active=true;RC.realm=realm;RC.lvNum=d.lvNum;RC.ready=new Set();RC.loaded=new Set();
+    drawReadyOverlay();return;
+  }
+  if(d.type==='readyUpdate'){RC.ready=new Set(d.readyIds);mpUpdateReadyList();return;}
+  if(d.type==='countdown'){
+    const ov=document.getElementById('mp-ready-overlay');
+    if(d.n>0){
+      if(ov){const pl=ov.querySelector('#rc-player-list');if(pl)pl.innerHTML=`<div style="font-size:52px;text-align:center;color:#ffcc44">${d.n}</div>`;}
+      else showMsg(String(d.n));
+    }else{mpCloseReadyOverlay();RC.active=false;}
+    return;
+  }
+  if(!MP.isHost&&d.type==='levelLoading'){
+    const list=document.getElementById('rc-player-list');
+    if(list)list.innerHTML='<div style="text-align:center;color:#aaa;font-size:14px">Loading level...</div>';
+    return;
+  }
   if(!MP.isHost&&d.type==='syncLevel'){
     showMsg('Loading level...');
     try{
@@ -4125,13 +4147,23 @@ function mpHandleMessage(d){
     document.getElementById('hud').classList.remove('hidden');
     updHUD();MODE=d.isBoss?'boss':'level';
     showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
-    MP._levelReqT=0; // clear request flag
+    MP._levelReqT=0;
+    // Confirm loaded to host
+    mpSend({type:'loaded',playerId:MP.playerId});
     }catch(e){showMsg('Level sync error: '+e.message);}
     return;
   }
   if(MP.isHost){
     if(d.type==='requestLevel'&&G.lv&&G.curRealm){
       mpSendCurrentLevel();return;
+    }
+    if(d.type==='ready'&&RC.active){
+      RC.ready.add(d.playerId);
+      mpSend({type:'readyUpdate',readyIds:[...RC.ready]});
+      mpUpdateReadyList();mpCheckAllReady();return;
+    }
+    if(d.type==='loaded'&&RC.active){
+      RC.loaded.add(d.playerId);mpCheckAllLoaded();return;
     }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4500,6 +4532,101 @@ function drawAmbientParticles(){
 
 // Spawn offsets so players don't stack on entry
 const SPAWN_OFFSETS=[{x:0,y:0},{x:TL,y:0},{x:-TL,y:0},{x:0,y:TL}];
+
+// ── READY CHECK SYSTEM ──────────────────────────────────────────────────────
+const RC={active:false,realm:null,lvNum:0,ready:new Set(),loaded:new Set(),countdown:0};
+
+function mpReadyCheck(realm,lvNum){
+  RC.active=true;RC.realm=realm;RC.lvNum=lvNum;
+  RC.ready=new Set([MP.playerId]);RC.loaded=new Set();RC.countdown=0;
+  mpSend({type:'readyCheck',realmId:realm.id,lvNum,realmName:realm.name});
+  drawReadyOverlay();
+}
+
+function mpCheckAllReady(){
+  const total=1+Object.keys(MP.remoteInputs).length;
+  if(RC.ready.size<total)return;
+  // Everyone ready — load level then wait for loaded confirmations
+  RC.loaded=new Set([MP.playerId]);
+  const prog=G.progress.rp[RC.realm.id];
+  if(RC.lvNum===-1)startBoss();
+  else startLevel(RC.realm,RC.lvNum);
+  mpSend({type:'levelLoading'});
+}
+
+function mpCheckAllLoaded(){
+  const total=1+Object.keys(MP.remoteInputs).length;
+  if(RC.loaded.size<total)return;
+  // Start countdown on all screens
+  RC.countdown=3;
+  mpSend({type:'countdown',n:3});
+  const tick=setInterval(()=>{
+    RC.countdown--;
+    mpSend({type:'countdown',n:RC.countdown});
+    if(RC.countdown<=0){clearInterval(tick);RC.active=false;}
+  },1000);
+}
+
+function drawReadyOverlay(){
+  const el=document.getElementById('mp-ready-overlay');
+  if(el)el.remove();
+  const ov=document.createElement('div');
+  ov.id='mp-ready-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;font-family:Cinzel,serif;color:#fff;gap:16px;';
+  const title=document.createElement('div');
+  title.style.cssText='font-size:22px;letter-spacing:.15em;color:#ffcc66;margin-bottom:8px;';
+  title.textContent=(RC.realm?.name||'Level')+' — Ready Check';
+  ov.appendChild(title);
+  // Player list
+  const list=document.createElement('div');list.id='rc-player-list';
+  list.style.cssText='display:flex;flex-direction:column;gap:8px;min-width:220px;';
+  ov.appendChild(list);
+  mpUpdateReadyList();
+  // Ready button (clients only — host is auto-ready)
+  if(!MP.isHost){
+    const btn=document.createElement('button');
+    btn.textContent='READY';
+    btn.style.cssText='margin-top:12px;padding:12px 40px;font-family:Cinzel,serif;font-size:16px;letter-spacing:.1em;background:#22aa44;color:#fff;border:none;border-radius:6px;cursor:pointer;';
+    btn.onclick=()=>{
+      btn.disabled=true;btn.textContent='Waiting...';btn.style.background='#555';
+      mpSend({type:'ready',playerId:MP.playerId});
+    };
+    ov.appendChild(btn);
+  }
+  document.body.appendChild(ov);
+}
+
+function mpUpdateReadyList(){
+  const list=document.getElementById('rc-player-list');if(!list)return;
+  list.innerHTML='';
+  const allPlayers=[{id:MP.isHost?MP.playerId:'host',label:'P1 — Host',idx:0}];
+  Object.entries(MP.remoteInputs||{}).forEach(([pid,ri])=>
+    allPlayers.push({id:pid,label:`P${ri.playerIdx+1}`,idx:ri.playerIdx}));
+  // For clients, build from G.players
+  if(!MP.isHost){
+    G.players.forEach((rp,i)=>{if(!rp)return;const isMe=i===MP.localPlayerIdx;
+      const item=document.createElement('div');
+      item.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:rgba(255,255,255,.07);border-radius:6px;font-size:14px;';
+      const readyEl=document.createElement('span');
+      readyEl.style.color=RC.ready.has(isMe?MP.playerId:`p${i}`)?'#44ee66':'#888';
+      readyEl.textContent=RC.ready.has(isMe?MP.playerId:`p${i}`)?'✓ Ready':'Waiting...';
+      item.innerHTML=`<span>P${i+1}${isMe?' (You)':''}</span>`;
+      item.appendChild(readyEl);list.appendChild(item);
+    });return;
+  }
+  allPlayers.forEach(({id,label})=>{
+    const item=document.createElement('div');
+    item.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:rgba(255,255,255,.07);border-radius:6px;font-size:14px;';
+    const readyEl=document.createElement('span');
+    readyEl.style.color=RC.ready.has(id)?'#44ee66':'#888';
+    readyEl.textContent=RC.ready.has(id)?'✓ Ready':'Waiting...';
+    item.innerHTML=`<span>${label}</span>`;item.appendChild(readyEl);list.appendChild(item);
+  });
+}
+
+function mpCloseReadyOverlay(){document.getElementById('mp-ready-overlay')?.remove();}
+
+// ── END READY CHECK ──────────────────────────────────────────────────────────
 
 function mpSendCurrentLevel(){
   if(!G.lv||!G.curRealm)return;
