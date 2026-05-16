@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.28';
+const VERSION='0.29';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4159,6 +4159,10 @@ function mpHandleMessage(d){
   }
   if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
   if(MP.isHost){
+    if(d.type==='requestLevel'&&G.lv&&G.curRealm){
+      // Client missed the syncLevel — resend it
+      startLevel(G.curRealm,G.curLvNum);return;
+    }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
         // Already known — resend welcome in case the first was dropped
@@ -4292,6 +4296,10 @@ function mpApplyState(data){
   if(!data.players)return;
   // Sync projectiles from host (render only — host handles collisions)
   if(!MP.isHost&&data.projs)G.projs=data.projs.map(p=>({...p,life:1,maxLife:1,dx:0,dy:0}));
+  // If host is in a level but client is still in hub — request level sync
+  if(!MP.isHost&&(data.mode==='level'||data.mode==='boss')&&(MODE==='hub'||MODE==='title')){
+    mpSend({type:'requestLevel',playerId:MP.playerId});
+  }
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
     if(!G.players[i])G.players[i]=createRemotePlayer('',i);
