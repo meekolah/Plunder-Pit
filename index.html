@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.51';
+const VERSION='0.52';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4324,7 +4324,8 @@ function mpApplyState(data){
     G._remoteProjCount=newRemoteCount;
   }
   data.players.forEach((snap,i)=>{
-    if(!snap||i===MP.localPlayerIdx)return;
+    if(i===MP.localPlayerIdx)return;
+    if(!snap){G.players[i]=null;return;} // player disconnected — clear slot
     if(!G.players[i])G.players[i]=createRemotePlayer('',i);
     const rp=G.players[i];
     rp.x=lerp(rp.x,snap.x,.35);rp.y=lerp(rp.y,snap.y,.35);
@@ -5401,7 +5402,7 @@ function renderLevel(){
   drawAmbientParticles();
   drawExitRing();
   drawEnemies2();drawDyingEnemies();drawProjs();
-  G.players.forEach(rp=>{if(rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
+  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
   drawPlayer2();drawParts();
   if(MODE==='boss'&&G.lv.boss)drawBoss();
   // Soul tether beam (Lich)
