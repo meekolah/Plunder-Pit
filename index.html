@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.62';
+const VERSION='0.63';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4311,7 +4311,7 @@ function mpSendInput(){
     projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
-      col:pr.col,sz:pr.sz||4,
+      col:pr.col,sz:pr.sz||4,atk:pr.atk||G.p.atk||18,
     })),
   });
   MP._wasMouseBtn=mouseBtn;
@@ -4388,7 +4388,7 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
-    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0}):null),
+    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
     lv_items:(G.lv?.items||[]).map((_,i)=>i),
   });
 }
@@ -4433,7 +4433,19 @@ function mpApplyState(data){
     const byId=new Map(G.lv.enemies.map(e=>[e.eid,e]));
     data.enemies.forEach(es=>{
       if(!es)return;
-      const e=byId.get(es.id);if(!e)return;
+      let e=byId.get(es.id);
+      if(!e&&es.alive){
+        // Spawner created a new enemy — add it to client's array
+        e={eid:es.id,x:es.x,y:es.y,hp:es.hp,maxHp:es.hp||10,
+          type:es.type||'grunt',col:es.col||'#aa3333',sz:es.sz||.5,
+          alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
+          dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
+          facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
+          atk:5,spd:80,tier:1,
+        };
+        G.lv.enemies.push(e);byId.set(es.id,e);
+      }
+      if(!e)return;
       e.x=lerp(e.x,es.x,.5);e.y=lerp(e.y,es.y,.5);
       e.hp=es.hp;e.alive=!!es.alive;
       if(es.hf&&!e._wasHitFlash)SFX.hit(false);
