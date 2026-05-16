@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.36';
+const VERSION='0.37';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4110,6 +4110,9 @@ function mpHandleMessage(d){
       if(rp&&d.px){
         rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
+        rp.attacking=d.attacking||false;
+        rp.atkProg=d.atkProg||0;
+        rp.atkAngle=d.atkAngle||0;
       }
       // Fire projectile for remote player if they attacked this frame
       if(rp&&d.didShoot&&(!rp._lastShoot||performance.now()-rp._lastShoot>300)){
@@ -4172,6 +4175,9 @@ function mpSendInput(){
     px:Math.round(G.p.x),py:Math.round(G.p.y),
     facingX:G.p.facing?.x||1,facingY:G.p.facing?.y||0,
     didShoot:!!(mouseBtn&&!MP._wasMouseBtn),
+    attacking:G.p.attacking||false,
+    atkProg:G.p.atkProg||0,
+    atkAngle:G.p.atkAngle||0,
   });
   MP._wasMouseBtn=mouseBtn;
 }
