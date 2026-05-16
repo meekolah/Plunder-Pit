@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.33';
+const VERSION='0.35';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4106,11 +4106,18 @@ function mpHandleMessage(d){
     if(d.type==='input'&&MP.remoteInputs[d.playerId]){
       const ri=MP.remoteInputs[d.playerId];
       ri.keys=d.keys||{};ri.mousePos=d.mousePos||ri.mousePos;ri.mouseBtn=d.mouseBtn||false;
-      // Snap remote player to client's authoritative position
       const rp=G.players[ri.playerIdx];
       if(rp&&d.px){
         rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
+      }
+      // Fire projectile for remote player if they attacked this frame
+      if(rp&&d.didShoot&&(!rp._lastShoot||performance.now()-rp._lastShoot>300)){
+        rp._lastShoot=performance.now();
+        const fx=d.facingX||rp.facing?.x||1,fy=d.facingY||rp.facing?.y||0;
+        G.projs.push({x:rp.x,y:rp.y,vx:fx*285,vy:fy*285,
+          col:rp.charAccent||'#44cc44',sz:4,life:0.8,maxLife:0.8,
+          atk:rp.atk||18,owner:ri.playerIdx,trail:[]});
       }
     }
   } else {
@@ -4164,7 +4171,9 @@ function mpSendInput(){
     keys:{...keys},mousePos:{...mousePos},mouseBtn,
     px:Math.round(G.p.x),py:Math.round(G.p.y),
     facingX:G.p.facing?.x||1,facingY:G.p.facing?.y||0,
+    didShoot:!!(mouseBtn&&!MP._wasMouseBtn),
   });
+  MP._wasMouseBtn=mouseBtn;
 }
 
 function mpCopyCode(){
@@ -4218,12 +4227,22 @@ function mpBroadcastState(){
       turbo:p.turbo||0,item:p.item,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
     }:null),
+    projs:G.projs.slice(0,40).map(pr=>({
+      x:Math.round(pr.x),y:Math.round(pr.y),
+      col:pr.col,sz:pr.sz||4,
+    })),
   });
 }
 
 
 function mpApplyState(data){
   if(!data.players)return;
+  // Render host projectiles on client
+  if(!MP.isHost&&data.projs){
+    G.projs=data.projs.map(pr=>({
+      ...pr,vx:0,vy:0,life:1,maxLife:1,trail:[],
+    }));
+  }
   data.players.forEach((snap,i)=>{
     if(!snap||i===MP.localPlayerIdx)return;
     if(!G.players[i])G.players[i]=createRemotePlayer('',i);
@@ -7467,9 +7486,6 @@ function loop(ts){
       });
       updCam(dt);
       drawHub();
-      mpProcessRemoteInputs(dt);
-      mpSendInput();
-      mpBroadcastState();
     } else if(MODE==='level'||MODE==='boss'){
       if(G.hitStop>0){
         G.hitStop--;         // freeze logic only — render still runs below
@@ -7489,18 +7505,18 @@ function loop(ts){
         if(MODE==='level'||MODE==='boss')updateEnemyCollisions();
         updParts(dt);
         updCam(dt);
-        mpProcessRemoteInputs(dt);
-        mpSendInput();
-        mpBroadcastState();
       }
       renderLevel();
     } else if(MODE==='pause'){
-      // Render frozen world behind overlay
       if(G.lv)renderLevel();else drawHub();
       drawPause();
     } else if(MODE==='shop'||MODE==='death'){
       if(G.lv)renderLevel();else{procInput(dt);updCam(dt);drawHub();}
     }
+    // MP always runs regardless of mode so players stay visible
+    mpProcessRemoteInputs(dt);
+    mpSendInput();
+    mpBroadcastState();
   }catch(err){
     console.error('Loop error:',err);
   }
