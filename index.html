@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.64';
+const VERSION='0.65';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3599,6 +3599,10 @@ function doTurbo(p){
 function updateProjs(dt){
   const p=G.p;
   G.projs=G.projs.filter(pr=>{
+    // Remote display-only projs — just move and expire, no collision
+    if(pr._remote||pr._remoteId){
+      pr.x+=pr.vx*dt;pr.y+=pr.vy*dt;pr.life-=dt;return pr.life>0;
+    }
     // Advance position + trail
     pr.trail.unshift({x:pr.x,y:pr.y});
     if(pr.trail.length>(pr.isTurbo?22:6))pr.trail.pop();
@@ -3673,7 +3677,7 @@ function updateProjs(dt){
       addFT('-'+Math.floor(pr.atk),p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);
       if(p.hp<=0)onDeath();return false;
     }
-    if(!pr.isBoss){
+    if(!pr.isBoss&&(!MP.enabled||MP.isHost)){
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){
           hitEnemy(e,pr.atk);
@@ -3689,6 +3693,11 @@ function updateProjs(dt){
       }
       for(const b of G.lv.barrels||[]){
         if(b.alive&&dist(pr,b)<TL*.5){breakBarrel(b);spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
+      }
+    } else if(!pr.isBoss&&MP.enabled&&!MP.isHost){
+      // Client: still destroy proj on wall/enemy contact visually but no damage
+      for(const e of G.lv.enemies){
+        if(dist(pr,e)<TL*.5){spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
       }
     }
     return true;
