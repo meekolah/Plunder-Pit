@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.53';
+const VERSION='0.54';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2819,6 +2819,7 @@ function drawSummary(){
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
+  if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
   // Place recoverable death pile if one exists for this floor
   if(G.deathPile&&G.deathPile.realm===realm.id&&G.deathPile.lvNum===lvNum){
     const px=G.lv.playerStart;
@@ -3059,6 +3060,7 @@ function refreshShopUI(){
 }
 
 function returnHub(){
+  if(MP.isHost&&MP.enabled)mpSend({type:'returnHub'});
   MODE='hub';
   // Clear all transient level state
   G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
@@ -3359,9 +3361,9 @@ function updatePlayer(dt){
     }
   });
 
-  // Item pickup — pendingDrops collects chest loot OUTSIDE the filter to avoid discard
+  // Item pickup — host only; clients receive removals via state broadcast
   const pendingDrops=[];
-  G.lv.items=G.lv.items.filter(item=>{
+  if(!MP.enabled||MP.isHost){G.lv.items=G.lv.items.filter(item=>{
     if(item.hidden)return true;
     if(dist(p,item)>TL*.65){if(item._keyMsg)item._keyMsg=false;return true;}
     if(item.type==='gold'){p.gold+=item.val;addFT('+'+item.val+'g',item.x,item.y,'#f5c542');SFX.gold();}
@@ -3400,6 +3402,7 @@ function updatePlayer(dt){
     return false;
   });
   if(pendingDrops.length)G.lv.items.push(...pendingDrops);
+  }
 }
 
 function openChest(ch){
@@ -4092,6 +4095,41 @@ function mpHandleMessage(d){
       MP.remoteInputs[d.playerId].lastPing=Date.now();
     return;
   }
+  if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
+  if(!MP.isHost&&d.type==='syncLevel'){
+    const realm=REALMS.find(r=>r.id===d.realmId);
+    if(!realm)return;
+    G.curRealm=realm;G.curLvNum=d.lvNum;
+    const flat=d.map.split('').map(Number);
+    const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
+    const enemies=d.enemies.map(e=>({
+      type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.mhp,atk:e.atk,spd:e.spd,
+      col:e.col,sz:e.sz,tier:e.tier||1,dir:e.dir||0,
+      alive:true,hidden:!!e.hidden,hitFlash:0,stagger:0,
+      kbTimer:0,vx:0,vy:0,dyingTimer:0,invuln:0,atkTimer:0,
+      state:'idle',timer:0,chargeT:0,facing:{x:0,y:1},parts:[],_chainKb:false,
+    }));
+    const spawners=d.spawners.map(s=>({
+      x:s.x,y:s.y,tx:s.tx,ty:s.ty,hp:s.hp,maxHp:s.mhp,hp1:2,maxHp1:2,
+      alive:!!s.alive,activated:false,timer:s.interval*.5,
+      interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,grunts:[],realm,lvNum:d.lvNum,
+    }));
+    G.lv={map,rooms:d.rooms,playerStart:d.playerStart,stairsPos:d.stairsPos,
+      torches:d.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:!!t.wall,side:!!t.side})),
+      secretPaths:d.secretPaths||[],enemies,items:d.items||[],spawners,
+      hazards:[],warnings:[],ff:null,isBoss:!!d.isBoss,realm,decos:[],barrels:[],exitTimer:0};
+    G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
+    // Offset spawn so players don't stack
+    const off=SPAWN_OFFSETS[MP.localPlayerIdx]||{x:0,y:0};
+    G.p.x=d.playerStart.x+off.x;G.p.y=d.playerStart.y+off.y;
+    G.cam.x=G.p.x-cv.width/2;G.cam.y=G.p.y-cv.height/2;
+    G.p.invuln=.6;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
+    G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress.crystals[realm.id]||0,t:G.t};
+    document.getElementById('hud').classList.remove('hidden');
+    updHUD();MODE=d.isBoss?'boss':'level';
+    showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
+    return;
+  }
   if(MP.isHost){
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
@@ -4298,6 +4336,8 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
+    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0}):null),
+    lv_items:(G.lv?.items||[]).map((_,i)=>i),
   });
 }
 
@@ -4325,6 +4365,22 @@ function mpApplyState(data){
     const newRemoteCount=data.projs.filter(pr=>pr.owner!==MP.playerId).length;
     if(newRemoteCount>lastCount)SFX.shoot(false);
     G._remoteProjCount=newRemoteCount;
+  }
+  // Apply enemy state from host
+  if(!MP.isHost&&data.enemies&&G.lv?.enemies){
+    data.enemies.forEach((es,i)=>{
+      const e=G.lv.enemies[i];if(!e||!es)return;
+      e.x=lerp(e.x,es.x,.4);e.y=lerp(e.y,es.y,.4);
+      e.hp=es.hp;e.alive=!!es.alive;
+      if(es.hf&&!e._wasHitFlash)SFX.hit(false);
+      e._wasHitFlash=!!es.hf;
+      e.hitFlash=es.hf?.12:0;
+    });
+  }
+  // Sync item removals
+  if(!MP.isHost&&data.lv_items!=null&&G.lv?.items){
+    const keep=new Set(data.lv_items);
+    G.lv.items=G.lv.items.filter((_,i)=>keep.has(i));
   }
   data.players.forEach((snap,i)=>{
     if(i===MP.localPlayerIdx)return;
@@ -4425,6 +4481,33 @@ function drawAmbientParticles(){
       ctx.shadowBlur=0;
     }
     ctx.globalAlpha=1;
+  });
+}
+
+// Spawn offsets so players don't stack on entry
+const SPAWN_OFFSETS=[{x:0,y:0},{x:TL,y:0},{x:-TL,y:0},{x:0,y:TL}];
+
+function mpSendCurrentLevel(){
+  if(!G.lv||!G.curRealm)return;
+  const realm=G.curRealm;
+  mpSend({type:'syncLevel',
+    realmId:realm.id,lvNum:G.curLvNum,isBoss:G.lv.isBoss?1:0,
+    map:G.lv.map.flat().join(''),
+    playerStart:G.lv.playerStart,stairsPos:G.lv.stairsPos,
+    rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
+    torches:(G.lv.torches||[]).map(t=>({x:t.x,y:t.y,ph:t.ph,wall:t.wall?1:0,side:t.side?1:0})),
+    secretPaths:G.lv.secretPaths||[],
+    enemies:G.lv.enemies.map(e=>({
+      type:e.type,x:Math.round(e.x),y:Math.round(e.y),
+      hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
+      col:e.col,sz:e.sz,tier:e.tier||1,
+      dir:e.dir||0,hidden:e.hidden?1:0,
+    })),
+    items:(G.lv.items||[]).map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0})),
+    spawners:(G.lv.spawners||[]).map(s=>({
+      tx:s.tx,ty:s.ty,x:s.x,y:s.y,hp:s.hp,mhp:s.maxHp,
+      alive:s.alive?1:0,interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,
+    })),
   });
 }
 
@@ -7571,21 +7654,23 @@ function loop(ts){
       drawHub();
     } else if(MODE==='level'||MODE==='boss'){
       if(G.hitStop>0){
-        G.hitStop--;         // freeze logic only — render still runs below
+        G.hitStop--;
         updParts(dt);updCam(dt);
       } else {
         procInput(dt);
         updatePlayer(dt);
-        updateSpawners(dt);
-        updateEnemies(dt);
-        updateDyingEnemies(dt);
-        updateHazards(dt);
+        if(!MP.enabled||MP.isHost){
+          updateSpawners(dt);
+          updateEnemies(dt);
+          updateDyingEnemies(dt);
+          updateHazards(dt);
+          if(MODE==='boss')updateBoss(dt);
+        }
         updateProjs(dt);
-        if(MODE==='boss')updateBoss(dt);
         G.frameCount=(G.frameCount||0)+1;
         updateWarnings(dt);
         updateAmbientParticles(dt);
-        if(MODE==='level'||MODE==='boss')updateEnemyCollisions();
+        if(!MP.enabled||MP.isHost)updateEnemyCollisions();
         updParts(dt);
         updCam(dt);
       }
