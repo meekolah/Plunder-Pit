@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.63';
+const VERSION='0.64';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3811,7 +3811,7 @@ function mkEnemy(realm,x,y){
   const d=defs[rand(0,defs.length-1)];
   const sc=1+(G.curLvNum||0)*.3;
   const e={...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
-    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2,hitFlash:0,
+    x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2,hitFlash:0,alive:true,
     eid:Math.random().toString(36).slice(2,8)}; // unique ID for MP sync
   const eliteChance=Math.min(0.45, 0.14+(G.curLvNum||0)*0.06);
   if(Math.random()<eliteChance)applyElite(e);
@@ -4388,7 +4388,7 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
-    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive?1:0,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
+    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
     lv_items:(G.lv?.items||[]).map((_,i)=>i),
   });
 }
