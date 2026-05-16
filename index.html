@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.60';
+const VERSION='0.61';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4151,7 +4151,10 @@ function mpHandleMessage(d){
     const sp={x:d.sp[0],y:d.sp[1]};
     G.lv={map,rooms,playerStart:ps,stairsPos:sp,
       torches:[],secretPaths:[],enemies,items,spawners:[],
-      hazards:[],warnings:[],ff:null,isBoss:!!d.bs,realm,decos:[],barrels:[],exitTimer:0};
+      hazards:[],warnings:[],ff:null,isBoss:!!d.bs,realm,
+      decos:[],barrels:[],exitTimer:0,
+      switches:[],doors:[],boss:null,bossPortal:null,bossPortalTimer:0,
+      lichTether:null,ffTx:0,ffTy:0};
     G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
     const off=SPAWN_OFFSETS[MP.localPlayerIdx]||{x:0,y:0};
     G.p.x=ps.x+off.x;G.p.y=ps.y+off.y;
@@ -7835,6 +7838,10 @@ function loop(ts){
     mpBroadcastState();
   }catch(err){
     console.error('Loop error:',err);
+    if(!G._lastErrShown||Date.now()-G._lastErrShown>2000){
+      G._lastErrShown=Date.now();
+      showMsg('LOOP: '+(err.message||err).substring(0,60));
+    }
   }
   requestAnimationFrame(loop);
 }
