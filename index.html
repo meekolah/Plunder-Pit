@@ -4038,9 +4038,10 @@ async function mpSend(data){
 function mpConnect(roomCode){
   MP.roomCode=roomCode.toLowerCase();
   MP.playerId=MP.playerId||mpGenId();
-  const ws=new WebSocket(`${NTFY_WS}/${MP.roomCode}/ws`);
-  MP.ws=ws;
-  ws.onopen=()=>{
+  // SSE for receiving — simpler and more firewall-friendly than WebSocket
+  const es=new EventSource(`${NTFY}/${MP.roomCode}/sse`);
+  MP.ws=es;
+  es.onopen=()=>{
     MP.status='connected';
     const st=document.getElementById('mp-status-text');
     if(st)st.textContent=MP.isHost?'Waiting for players…':'Joining…';
@@ -4059,27 +4060,20 @@ function mpConnect(roomCode){
     }
     MP._ping=setInterval(()=>mpSend({type:'ping'}),25000);
   };
-  ws.onmessage=(e)=>{
+  es.onmessage=(e)=>{
     MP._msgCount++;
     const dbg=document.getElementById('mp-status-text');
     if(dbg&&!MP.enabled)dbg.textContent=(MP.isHost?'Host':'Client')+' — msgs:'+MP._msgCount;
     try{
       const env=JSON.parse(e.data);
-      if(env.event!=='message')return;
-      const d=JSON.parse(env.message);
+      const d=JSON.parse(env.message||e.data);
       if(d.from===MP.playerId)return;
       mpHandleMessage(d);
     }catch(err){}
   };
-  ws.onerror=()=>{
-    showMsg('Connection failed');
+  es.onerror=()=>{
     const st=document.getElementById('mp-status-text');
-    if(st)st.textContent='Connection failed — try again.';
-  };
-  ws.onclose=()=>{
-    clearInterval(MP._joinRetry);clearTimeout(MP._joinTimeout);clearInterval(MP._ping);
-    if(MP.enabled)showMsg('Disconnected from session.');
-    MP.enabled=false;MP.status='offline';
+    if(st&&MP.status!=='connected')st.textContent='Connection failed — try again.';
   };
 }
 
