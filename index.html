@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.69';
+const VERSION='0.70';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -4121,7 +4121,10 @@ function mpHandleMessage(d){
       dbg.style.cssText='position:fixed;top:8px;right:8px;background:rgba(0,0,0,.7);color:#0f0;font-family:monospace;font-size:11px;padding:6px 10px;border-radius:4px;z-index:9999;pointer-events:none;';
       document.body.appendChild(dbg);
     }
-    dbg.textContent=`MODE:${MODE} lv:${G.lv?'Y':'N'} enabled:${MP.enabled?'Y':'N'}`;
+    const ec=G.lv?.enemies?.length||0,ic=G.lv?.items?.length||0;
+    const sc=(G.lv?.spawners||[]).filter(s=>s?.alive).length;
+    const role=MP.isHost?'HOST':'CLIENT';
+    dbg.textContent=`${role} MODE:${MODE} lv:${G.lv?'Y':'N'} en:${ec} it:${ic} sp:${sc}`;
   }
   if(d.type==='ping'){
     if(MP.isHost&&d.playerId&&MP.remoteInputs[d.playerId])
@@ -4410,9 +4413,10 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
-    enemies:(G.lv?.enemies||[]).slice(0,80).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
+    enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
     deaths:G._mpDeaths||[],
-    lv_items:(G.lv?.items||[]).map((_,i)=>i),
+    items:(G.lv?.items||[]).map(it=>[it.type,Math.round(it.x),Math.round(it.y),it.val||0,it.id||it.realm||0]),
+    spawners:(G.lv?.spawners||[]).map(s=>s?[s.hp,s.alive===false?0:1,s.activeGrunts||0,s.activated?1:0]:null),
   });
   G._mpDeaths=[];
 }
@@ -4480,8 +4484,10 @@ function mpApplyState(data){
   // Apply enemy state from host — match by ID to survive array shifts from deaths
   if(!MP.isHost&&data.enemies&&G.lv?.enemies){
     const byId=new Map(G.lv.enemies.map(e=>[e.eid,e]));
+    const seen=new Set();
     data.enemies.forEach(es=>{
       if(!es)return;
+      seen.add(es.id);
       let e=byId.get(es.id);
       if(!e&&es.alive){
         // Spawner created a new enemy — add it to client's array
@@ -4502,11 +4508,42 @@ function mpApplyState(data){
       e._wasHitFlash=!!es.hf;
       e.hitFlash=es.hf?.12:0;
     });
+    // Reconciliation: enemies on client but missing from host's broadcast are dead
+    // (catches deaths we may have missed via the deaths buffer due to dropped messages)
+    const stragglers=G.lv.enemies.filter(e=>e.eid&&!seen.has(e.eid));
+    if(stragglers.length){
+      stragglers.forEach(e=>{
+        // Light death FX — quieter than the explicit death broadcast to avoid double-FX
+        for(let i=0;i<6;i++){
+          const a=Math.random()*Math.PI*2,s=40+Math.random()*80;
+          G.parts.push({x:e.x,y:e.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+            life:.3,ml:.5,sz:3+Math.random()*3,col:e.col||'#aaa'});
+        }
+      });
+      G.lv.enemies=G.lv.enemies.filter(e=>!e.eid||seen.has(e.eid));
+    }
   }
-  // Sync item removals
-  if(!MP.isHost&&data.lv_items!=null&&G.lv?.items){
-    const keep=new Set(data.lv_items);
-    G.lv.items=G.lv.items.filter((_,i)=>keep.has(i));
+  // Full item list replacement — host is authoritative
+  if(!MP.isHost&&data.items&&G.lv?.items){
+    G.lv.items=data.items.map(a=>({type:a[0],x:a[1],y:a[2],val:a[3],realm:typeof a[4]==='string'?a[4]:undefined,id:typeof a[4]==='number'?a[4]:undefined,bob:Math.random()*Math.PI*2}));
+  }
+  // Spawner state sync (by index — array order is fixed at level gen)
+  if(!MP.isHost&&data.spawners&&G.lv?.spawners){
+    data.spawners.forEach((ss,i)=>{
+      if(!ss)return;
+      const sp=G.lv.spawners[i];if(!sp)return;
+      const wasAlive=sp.alive;
+      sp.hp=ss[0];sp.alive=!!ss[1];sp.activeGrunts=ss[2];sp.activated=!!ss[3];
+      if(wasAlive&&!sp.alive){
+        // Trigger spawner death FX on client
+        for(let k=0;k<14;k++){
+          const a=Math.random()*Math.PI*2,s=60+Math.random()*120;
+          G.parts.push({x:sp.x,y:sp.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+            life:.4+Math.random()*.3,ml:.7,sz:4+Math.random()*5,col:'#ff8800'});
+        }
+        if(SFX.boom)SFX.boom();
+      }
+    });
   }
   data.players.forEach((snap,i)=>{
     if(i===MP.localPlayerIdx)return;
