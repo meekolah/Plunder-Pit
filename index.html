@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.55';
+const VERSION='0.56';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -228,7 +228,7 @@ const TWALL=0,TFLOOR=1,TDOOR=2,TSWITCH=3,TEXIT=4,TSPIKE=5,TSECRET=6;
 const REALMS=[
   {
     id:'forsaken',name:'Forsaken Province',order:0,unlockCost:5,
-    th:{fl:['#1c1428','#181224'],wl:'#100918',wt:'#1e1430',tc:'rgba(160,80,220,0.18)',fc:'rgba(255,160,60,',fg:'#ff9922',sp:'#3a1f55',ss:'#7744aa'},
+    th:{fl:['#2a1e3c','#241830'],wl:'#080412',wt:'#0e0820',tc:'rgba(160,80,220,0.18)',fc:'rgba(255,160,60,',fg:'#ff9922',sp:'#3a1f55',ss:'#7744aa'},
     ed:[
       {name:'Zombie',       col:'#5a8a5a',out:'#3a6a3a',hp:38, atk:8, spd:48, xp:8, g:[5,15], sz:.58,type:'walker'},
       {name:'Bone Archer',  col:'#d0c090',out:'#a09068',hp:30, atk:9, spd:55, xp:16,g:[8,20], sz:.56,type:'archer'},
@@ -241,7 +241,7 @@ const REALMS=[
   },
   {
     id:'mountain',name:'Mountain Realm',order:1,unlockCost:50,
-    th:{fl:['#1a1810','#181610'],wl:'#0e0c08',wt:'#201e14',tc:'rgba(200,120,50,0.2)',fc:'rgba(255,155,60,',fg:'#ff8800',sp:'#4a3020',ss:'#aa6633'},
+    th:{fl:['#2a2614','#242210'],wl:'#070604',wt:'#141208',tc:'rgba(200,120,50,0.2)',fc:'rgba(255,155,60,',fg:'#ff8800',sp:'#4a3020',ss:'#aa6633'},
     ed:[
       {name:'Orc',          col:'#5a8a30',out:'#3a6a20',hp:55, atk:13,spd:62, xp:18,g:[8,20], sz:.65,type:'walker'},
       {name:'Rock Hurler',  col:'#887060',out:'#665040',hp:48, atk:17,spd:38, xp:22,g:[12,28],sz:.70,type:'archer'},
@@ -254,7 +254,7 @@ const REALMS=[
   },
   {
     id:'castle',name:'Castle Realm',order:2,unlockCost:75,
-    th:{fl:['#1c1a22','#181620'],wl:'#100e16',wt:'#201c28',tc:'rgba(100,80,200,0.18)',fc:'rgba(255,210,130,',fg:'#ffe090',sp:'#2a1f44',ss:'#6655bb'},
+    th:{fl:['#2c2834','#26222e'],wl:'#0a0810',wt:'#141020',tc:'rgba(100,80,200,0.18)',fc:'rgba(255,210,130,',fg:'#ffe090',sp:'#2a1f44',ss:'#6655bb'},
     ed:[
       {name:'Dark Guard',    col:'#4a5a7a',out:'#3a4a6a',hp:75, atk:18,spd:65, xp:25,g:[12,28],sz:.68,type:'walker'},
       {name:'Warlock',       col:'#886699',out:'#664477',hp:62, atk:22,spd:72, xp:28,g:[10,25],sz:.62,type:'archer'},
@@ -880,7 +880,9 @@ function drawHub(){
   ctx.globalAlpha=1;
 
   // Draw players inside world-space transform so translate(rp.x,rp.y) works correctly
-  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
+  G.players.forEach(rp=>{
+    if(rp&&rp!==G.p&&(rp.playerMode==='hub'||!rp.playerMode))drawRemotePlayer(rp);
+  });
   drawPlayer2();
   drawProjs();
   // Particles
@@ -4097,35 +4099,29 @@ function mpHandleMessage(d){
   }
   if(!MP.isHost&&d.type==='returnHub'){returnHub();return;}
   if(!MP.isHost&&d.type==='syncLevel'){
+    showMsg('Loading level...');
     try{
     const realm=REALMS.find(r=>r.id===d.realmId);
     if(!realm){showMsg('Level sync error: realm not found');return;}
     G.curRealm=realm;G.curLvNum=d.lvNum;
     const flat=d.map.split('').map(Number);
     const map=Array.from({length:MH},(_,y)=>flat.slice(y*MW,(y+1)*MW));
-    const enemies=d.enemies.map(e=>({
+    const enemies=(d.enemies||[]).map(e=>({
       type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.mhp,atk:e.atk,spd:e.spd,
-      col:e.col,sz:e.sz,tier:e.tier||1,dir:e.dir||0,
-      alive:true,hidden:!!e.hidden,hitFlash:0,stagger:0,
-      kbTimer:0,vx:0,vy:0,dyingTimer:0,invuln:0,atkTimer:0,
-      state:'idle',timer:0,chargeT:0,facing:{x:0,y:1},parts:[],_chainKb:false,
+      col:e.col,sz:e.sz,tier:e.tier||1,
+      alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
+      dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
+      facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
     }));
-    const spawners=d.spawners.map(s=>({
-      x:s.x,y:s.y,tx:s.tx,ty:s.ty,hp:s.hp,maxHp:s.mhp,hp1:2,maxHp1:2,
-      alive:!!s.alive,activated:false,timer:s.interval*.5,
-      interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,grunts:[],realm,lvNum:d.lvNum,
-    }));
-    G.lv={map,rooms:d.rooms,playerStart:d.playerStart,stairsPos:d.stairsPos,
-      torches:d.torches.map(t=>({x:t.x,y:t.y,ph:t.ph,wall:!!t.wall,side:!!t.side})),
-      secretPaths:d.secretPaths||[],enemies,items:d.items||[],spawners,
+    G.lv={map,rooms:d.rooms||[],playerStart:d.playerStart,stairsPos:d.stairsPos,
+      torches:[],secretPaths:[],enemies,items:d.items||[],spawners:[],
       hazards:[],warnings:[],ff:null,isBoss:!!d.isBoss,realm,decos:[],barrels:[],exitTimer:0};
     G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
-    // Offset spawn so players don't stack
     const off=SPAWN_OFFSETS[MP.localPlayerIdx]||{x:0,y:0};
     G.p.x=d.playerStart.x+off.x;G.p.y=d.playerStart.y+off.y;
     G.cam.x=G.p.x-cv.width/2;G.cam.y=G.p.y-cv.height/2;
     G.p.invuln=.6;G.shakeT=0;G.hurtFlash=0;G.hitStop=0;
-    G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress.crystals[realm.id]||0,t:G.t};
+    G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress?.crystals?.[realm.id]||0,t:G.t};
     document.getElementById('hud').classList.remove('hidden');
     updHUD();MODE=d.isBoss?'boss':'level';
     showRLabel(realm.name+(d.lvNum>0?' — Level 2':' — Level 1'));
@@ -4335,6 +4331,7 @@ function mpBroadcastState(){
       charPrimary:p.charPrimary,charAccent:p.charAccent,
       turbo:p.turbo||0,item:p.item,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
+      playerMode:MODE,
     }:null),
     projs:G.projs.slice(0,60).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
@@ -4411,6 +4408,7 @@ function mpApplyState(data){
     rp.turbo=snap.turbo;rp.item=snap.item;
     if(snap.attacking&&!rp.attacking)SFX.swing();
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
+    rp.playerMode=snap.playerMode||'hub';
   });
 }
 
@@ -4506,24 +4504,18 @@ const SPAWN_OFFSETS=[{x:0,y:0},{x:TL,y:0},{x:-TL,y:0},{x:0,y:TL}];
 function mpSendCurrentLevel(){
   if(!G.lv||!G.curRealm)return;
   const realm=G.curRealm;
+  // Trim to essentials to stay well under Ably message limit
   mpSend({type:'syncLevel',
     realmId:realm.id,lvNum:G.curLvNum,isBoss:G.lv.isBoss?1:0,
     map:G.lv.map.flat().join(''),
     playerStart:G.lv.playerStart,stairsPos:G.lv.stairsPos,
     rooms:G.lv.rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h,cx:r.cx,cy:r.cy})),
-    torches:(G.lv.torches||[]).map(t=>({x:t.x,y:t.y,ph:t.ph,wall:t.wall?1:0,side:t.side?1:0})),
-    secretPaths:G.lv.secretPaths||[],
-    enemies:G.lv.enemies.map(e=>({
+    enemies:G.lv.enemies.slice(0,60).map(e=>({
       type:e.type,x:Math.round(e.x),y:Math.round(e.y),
       hp:e.hp,mhp:e.maxHp,atk:e.atk,spd:e.spd,
       col:e.col,sz:e.sz,tier:e.tier||1,
-      dir:e.dir||0,hidden:e.hidden?1:0,
     })),
-    items:(G.lv.items||[]).map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0})),
-    spawners:(G.lv.spawners||[]).map(s=>({
-      tx:s.tx,ty:s.ty,x:s.x,y:s.y,hp:s.hp,mhp:s.maxHp,
-      alive:s.alive?1:0,interval:s.interval,maxGrunts:s.maxGrunts,tier:s.tier||1,
-    })),
+    items:(G.lv.items||[]).slice(0,30).map(i=>({type:i.type,x:Math.round(i.x),y:Math.round(i.y),val:i.val||0})),
   });
 }
 
@@ -5504,7 +5496,7 @@ function renderLevel(){
   drawAmbientParticles();
   drawExitRing();
   drawEnemies2();drawDyingEnemies();drawProjs();
-  G.players.forEach(rp=>{if(rp&&rp!==G.p&&rp.hp>0)drawRemotePlayer(rp);});
+  G.players.forEach(rp=>{if(rp&&rp!==G.p&&(rp.playerMode==='level'||rp.playerMode==='boss'))drawRemotePlayer(rp);});
   drawPlayer2();drawParts();
   if(MODE==='boss'&&G.lv.boss)drawBoss();
   // Soul tether beam (Lich)
