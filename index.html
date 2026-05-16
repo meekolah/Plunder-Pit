@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.38';
+const VERSION='0.39';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3453,11 +3453,11 @@ function fireProj(p){
     const a=Math.atan2(aim.dy,aim.dx);
     [-0.32,0,0.32].forEach(off=>{
       const ang=a+off;
-      G.projs.push({...base,x:px,y:py,vx:Math.cos(ang)*PROJSPD,vy:Math.sin(ang)*PROJSPD,
+      G.projs.push({...base,x:px,y:py,_local:true,vx:Math.cos(ang)*PROJSPD,vy:Math.sin(ang)*PROJSPD,
         atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
     });
   } else {
-    G.projs.push({...base,x:px,y:py,vx:aim.dx*PROJSPD,vy:aim.dy*PROJSPD,
+    G.projs.push({...base,x:px,y:py,_local:true,vx:aim.dx*PROJSPD,vy:aim.dy*PROJSPD,
       atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
   }
   // Shot sparks
@@ -4115,10 +4115,12 @@ function mpHandleMessage(d){
         rp.atkProg=d.atkProg||0;
         rp.atkAngle=d.atkAngle||0;
       }
-      // Merge client projs into host render pool (tagged so they don't process collisions)
+      // Replace client projs in host render pool each input (no ghost accumulation)
       if(d.projs){
         G.projs=G.projs.filter(p=>!p._remote);
-        d.projs.forEach(p=>G.projs.push({...p,vx:0,vy:0,life:0.1,maxLife:0.1,trail:[],_remote:true}));
+        d.projs.forEach(p=>G.projs.push({
+          ...p,vx:0,vy:0,life:0.06,maxLife:0.06,trail:[],_remote:true,
+        }));
       }
       // Fire projectile for remote player if they attacked this frame
       if(rp&&d.didShoot&&(!rp._lastShoot||performance.now()-rp._lastShoot>300)){
@@ -4250,10 +4252,11 @@ function mpBroadcastState(){
 
 function mpApplyState(data){
   if(!data.players)return;
-  // Render host projectiles on client
+  // Render host projectiles on client — replace entirely each broadcast (no accumulation)
   if(!MP.isHost&&data.projs){
-    G.projs=data.projs.map(pr=>({
-      ...pr,vx:0,vy:0,life:1,maxLife:1,trail:[],
+    G.projs=G.projs.filter(p=>p._local); // keep only client's own projs
+    data.projs.forEach(pr=>G.projs.push({
+      ...pr,vx:0,vy:0,life:0.06,maxLife:0.06,trail:[],_remote:true,
     }));
   }
   data.players.forEach((snap,i)=>{
@@ -7488,8 +7491,10 @@ function loop(ts){
       updParts(dt);
       // Simple hub projectile movement — no collision, just fly and expire
       G.projs=G.projs.filter(pr=>{
-        pr.trail.unshift({x:pr.x,y:pr.y});
-        if(pr.trail.length>6)pr.trail.pop();
+        if(!pr._remote){
+          pr.trail.unshift({x:pr.x,y:pr.y});
+          if(pr.trail.length>6)pr.trail.pop();
+        }
         pr.x+=pr.vx*dt;pr.y+=pr.vy*dt;pr.life-=dt;
         return pr.life>0;
       });
