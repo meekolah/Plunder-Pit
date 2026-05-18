@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.73';
+const VERSION='0.74';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2858,6 +2858,8 @@ function startBoss(){
   MODE='boss';
   document.getElementById('hud').classList.remove('hidden');
   showRLabel('⚠ ' + realm.boss.name);
+  // Pull clients into the boss arena
+  if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
 }
 
 function showRLabel(txt){
@@ -3009,12 +3011,18 @@ const STAT_GROUPS=[
 
 function openShop(contText){
   const prev=MODE;MODE='shop';
+  if(MP.isHost&&MP.enabled)mpSend({type:'openShop',contText});
   const ov=document.getElementById('shopov');ov.classList.remove('hidden');
   refreshShopUI();
   const cb=document.getElementById('shopcont');
   cb.textContent=contText;
   const closeShop=()=>{
     ov.classList.add('hidden');
+    if(MP.enabled&&!MP.isHost){
+      // Client: just close their shop and resume level — host orchestrates the actual transition
+      MODE='level';
+      return;
+    }
     if(shopAction==='hub'){returnHub();}
     else if(shopAction==='boss'){startBoss();}
     else if(shopAction==='nextlevel'){startLevel(G.curRealm,G.curLvNum);}
@@ -3645,6 +3653,8 @@ function updateProjs(dt){
 
     // ── TURBO LANCE: pierces walls, one-shots everything in path ──
     if(pr.isTurbo){
+      // Damage/kill logic — host-only in MP (client just sees the lance fly through)
+      if(!MP.enabled||MP.isHost){
       // Kill all enemies within radius
       const toKill=G.lv.enemies.filter(e=>dist(pr,e)<TL*.85);
       if(toKill.length){
@@ -3677,6 +3687,7 @@ function updateProjs(dt){
       if(G.lv.boss?.active&&dist(pr,G.lv.boss)<TL*G.lv.boss.sz){
         hitBoss(G.lv.boss,99999);
       }
+      }
       return true; // lance keeps going — no wall or enemy stops it
     }
 
@@ -3700,15 +3711,22 @@ function updateProjs(dt){
       if(p.hp<=0)onDeath(p);return false;
     }
     if(!pr.isBoss&&(!MP.enabled||MP.isHost)){
+      // Identify proj owner so turbo is credited to the right player
+      const owner=pr._remoteId?(()=>{
+        const ri=MP.remoteInputs?.[pr._remoteId];
+        return ri?G.players[ri.playerIdx]:null;
+      })():p;
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){
           hitEnemy(e,pr.atk);
-          p.turbo=Math.min(p.turboMax2||200,p.turbo+2);
+          if(owner)owner.turbo=Math.min(owner.turboMax2||200,(owner.turbo||0)+2);
           spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
         }
       }
       if(G.lv.boss?.active&&dist(pr,G.lv.boss)<TL*G.lv.boss.sz*.85){
-        hitBoss(G.lv.boss,pr.atk);spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
+        hitBoss(G.lv.boss,pr.atk);
+        if(owner)owner.turbo=Math.min(owner.turboMax2||200,(owner.turbo||0)+2);
+        spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
       }
       for(const sp of G.lv.spawners||[]){
         if(sp.alive&&dist(pr,sp)<TL*.72){hitSpawner(sp);spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
@@ -4155,6 +4173,7 @@ function mpHandleMessage(d){
     return;
   }
   if(!MP.isHost&&d.type==='returnHub'){returnHub();mpCloseReadyOverlay();return;}
+  if(!MP.isHost&&d.type==='openShop'){openShop(d.contText||'Continue');return;}
   // Ready check messages
   if(!MP.isHost&&d.type==='readyCheck'){
     const realm=REALMS.find(r=>r.id===d.realmId);if(!realm)return;
@@ -4173,6 +4192,9 @@ function mpHandleMessage(d){
   }
   if(!MP.isHost&&d.type==='syncLevel'){
     mpCloseReadyOverlay();RC.active=false;
+    // Close any lingering UI overlays (shop, respawn)
+    document.getElementById('shopov')?.classList.add('hidden');
+    document.getElementById('respawnov')?.classList.add('hidden');
     showMsg('=== LEVEL ARRIVED ===');
     try{
     const realm=REALMS.find(r=>r.id===d.rid);
@@ -4183,6 +4205,7 @@ function mpHandleMessage(d){
     const enemies=(d.en||[]).map(a=>({
       eid:a[0],type:a[1],x:a[2],y:a[3],hp:a[4],maxHp:a[5],atk:a[6],spd:a[7],
       col:a[8],sz:(typeof a[9]==='number'&&a[9]>0&&a[9]<3)?a[9]:.5,tier:a[10]||1,
+      out:a[11]||'#000',
       alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
       dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
       facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
@@ -4277,7 +4300,7 @@ function mpHandleMessage(d){
         // Per-client filter — only remove THIS client's old projs, leave others alone
         G.projs=G.projs.filter(p=>p._remoteId!==d.playerId);
         d.projs.forEach(p=>G.projs.push({
-          ...p,life:0.5,maxLife:0.5,trail:[],_remoteId:d.playerId,
+          ...p,life:p.isTurbo?5:0.5,maxLife:p.isTurbo?5:0.5,trail:[],_remoteId:d.playerId,
         }));
         const newCount=d.projs.length;
         const prevCount=ri._lastProjCount||0;
@@ -4360,6 +4383,8 @@ function mpSendInput(){
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
       col:pr.col,sz:pr.sz||4,atk:pr.atk||G.p.atk||18,
+      isTurbo:!!pr.isTurbo,isLob:!!pr.isLob,
+      lobR:pr.lobR,lobCol:pr.lobCol,lobAtk:pr.lobAtk,
     })),
   });
   MP._wasMouseBtn=mouseBtn;
@@ -4436,7 +4461,7 @@ function mpBroadcastState(){
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
     })),
-    enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
+    enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,out:e.out,sz:e.sz,type:e.type}):null),
     deaths:G._mpDeaths||[],
     respawns:G._mpRespawns||[],
     items:(G.lv?.items||[]).map(it=>[it.type,Math.round(it.x),Math.round(it.y),it.val||0,it.id||it.realm||0]),
@@ -4533,6 +4558,7 @@ function mpApplyState(data){
         // Spawner created a new enemy — add it to client's array
         e={eid:es.id,x:es.x,y:es.y,hp:es.hp,maxHp:es.hp||10,
           type:es.type||'grunt_light',col:es.col||'#aa3333',
+          out:es.out||'#000',
           sz:(typeof es.sz==='number'&&es.sz>0&&es.sz<3)?es.sz:.5,
           alive:true,dir:0,hitFlash:0,stagger:0,kbTimer:0,vx:0,vy:0,
           dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
@@ -4819,7 +4845,7 @@ function mpSendCurrentLevel(){
     en:(G.lv.enemies||[]).map(e=>[
       e.eid||Math.random().toString(36).slice(2,8),
       e.type,Math.round(e.x),Math.round(e.y),
-      e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||.5,e.tier||1
+      e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||.5,e.tier||1,e.out||'#000'
     ]),
     it:(G.lv.items||[]).slice(0,20).map(i=>[i.type,Math.round(i.x),Math.round(i.y),i.val||0]),
     sp2:(G.lv.spawners||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.hp,s.maxHp,s.interval,s.maxGrunts,s.tier||1]),
@@ -6874,8 +6900,9 @@ function drawEnemies2(){
       const f=e.stagger/e.staggerDur;
       ctx.rotate(Math.cos(e.staggerDir)*f*0.38);
     }
-    const fl=e.hitFlash>0,col=fl?'#ffffff':e.col,out=fl?'#ffffff':e.out||'#000';
-    const sz=TL*e.sz;
+    const fl=e.hitFlash>0,col=fl?'#ffffff':(e.col||'#bbbbbb'),out=fl?'#ffffff':(e.out||'#000');
+    const sz=TL*(e.sz||.5);
+    if(!isFinite(sz)||sz<=0){ctx.restore();return;} // skip if corrupted
     ctx.shadowColor=col;ctx.shadowBlur=fl?20:7;
 
     switch(e.type){
