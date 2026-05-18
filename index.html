@@ -41,6 +41,15 @@
     #lhud{font-family:'Cinzel',serif;font-size:9px;color:#aa99cc}
     #pausebtn{width:28px;height:28px;background:rgba(10,8,20,.7);border:1px solid rgba(80,60,140,.4);color:#998;font-size:13px;cursor:pointer;display:none;align-items:center;justify-content:center;font-family:sans-serif;border-radius:4px;touch-action:manipulation;pointer-events:auto;flex-shrink:0}
     #pausebtn:active{background:rgba(80,60,160,.3)}
+    #team-cards{display:flex;flex-direction:column;gap:4px;margin-top:6px;align-items:flex-end}
+    .team-card{display:flex;align-items:center;gap:5px;background:rgba(8,6,18,.78);border:1px solid rgba(80,60,140,.3);border-radius:3px;padding:3px 6px;font-family:'Cinzel',serif;min-width:118px}
+    .team-card.dead{opacity:.45;filter:grayscale(.6)}
+    .team-card-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 4px currentColor}
+    .team-card-info{flex:1;display:flex;flex-direction:column;gap:1px}
+    .team-card-name{font-size:8px;color:#aab;letter-spacing:.08em}
+    .team-card-hp{height:5px;background:rgba(40,8,8,.7);border-radius:1px;overflow:hidden;position:relative}
+    .team-card-hpf{height:100%;background:linear-gradient(90deg,#c8302a,#e85040);transition:width .25s}
+    .team-card-stats{font-size:7px;color:#998;display:flex;gap:6px;letter-spacing:.04em}
     #crystalhud{font-size:9px;letter-spacing:.5px;color:#aaa}
     #rlabel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Cinzel',serif;font-size:clamp(18px,4.5vw,32px);color:#d4a853;text-shadow:0 0 22px rgba(212,168,83,.65);pointer-events:none;z-index:30;opacity:0;transition:opacity .5s;text-align:center}
     /* Overlay panels */
@@ -93,6 +102,8 @@
       <span id="lhud">Lv.1</span>
       <button id="pausebtn" onclick="if(MODE==='pause'){MODE=G._preMode||'hub';}else if(MODE==='level'||MODE==='boss'||MODE==='hub'){G._preMode=MODE;MODE='pause';}">⏸</button>
     </div>
+    <!-- Teammate status cards (multiplayer) -->
+    <div id="team-cards"></div>
   </div>
 </div>
 <div id="msg"></div>
@@ -214,7 +225,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.81';
+const VERSION='0.82';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3491,7 +3502,7 @@ function fireProj(p){
   const px=p.x+aim.dx*TL*.5,py=p.y+aim.dy*TL*.5;
   // Trigger weapon swing animation on every shot
   p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
-  SFX.shoot(p.item==='fury');
+  SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
   if(p.item==='triple_shot'){
     const a=Math.atan2(aim.dy,aim.dx);
     [-0.32,0,0.32].forEach(off=>{
@@ -3537,7 +3548,8 @@ function doMelee(p,target){
   const dmg=Math.floor((p.atk*2.4+rand(0,Math.floor(p.atk*.35)))*furyMul);
   const willKill=target.hp-dmg<=0;
   hitEnemy(target,dmg);
-  SFX.swing();SFX.hit(target.type==='golem'||target.type==='grunt_heavy');
+  SFX.atPos(p.x,p.y);SFX.swing();
+  SFX.atPos(target.x,target.y);SFX.hit(target.type==='golem'||target.type==='grunt_heavy');
   G.hitStop=Math.max(G.hitStop,willKill?3:1);
   p.turbo=Math.min(p.turboMax2||200,p.turbo+4);
   const aimAngle=Math.atan2(target.y-p.y,target.x-p.x);
@@ -3561,6 +3573,10 @@ function doMelee(p,target){
 // Turbo super — forward-piercing lance that passes through walls and one-shots everything
 function doTurboAOE(p){
   SFX.turboFire();
+  // In MP, client sends RPC so host applies damage authoritatively
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'turboAOE',x:Math.round(p.x),y:Math.round(p.y),playerId:MP.playerId});
+  }
   const aoeR=TL*3.2;
   addShake(8);G.hitStop=Math.max(G.hitStop,4);
   // Shockwave ring — expands outward visually
@@ -3611,6 +3627,7 @@ function doTurbo(p){
     life:5,isTurbo:true,isBoss:false,
     atk:99999,col:p.charAccent||'#f5c542',trail:[],
     dx:tx,dy:ty, // store direction for draw
+    _local:true, // mark as local so it ships to host via mpSendInput
   });
 
   // Launch burst — large fan of gold/white in fire direction
@@ -3849,11 +3866,11 @@ function hitSpawner(sp){
   // Only panic-spawn on subsequent hits; first break follows normal cadence
   if(!justBroke) sp.timer=0.05;
   sp.interval=Math.max(1.0,sp.interval-0.65);
-  SFX.hit(true); // chunky heavy hit
+  SFX.atPos(sp.x,sp.y);SFX.hit(true); // chunky heavy hit
   spawnP(sp.x,sp.y,sp.realm.th.ss,5);
   if(sp.hp<=0){
     sp.alive=false;
-    SFX.boom();
+    SFX.atPos(sp.x,sp.y);SFX.boom();
     eachPlayer(pl=>{pl.gold=(pl.gold||0)+rand(5,12);pl.xp=(pl.xp||0)+15;});
     spawnP(sp.x,sp.y,'#ff8800',14);
     // Drop crystals on spawner kill
@@ -4293,6 +4310,20 @@ function mpHandleMessage(d){
       // Client broke a secret remotely — host carves authoritatively and broadcasts via mapUpd
       hostCarveSecret(d.tx,d.ty);return;
     }
+    if(d.type==='turboAOE'){
+      // Client fired turbo AOE — host runs the damage on the remote player at their position
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          // Sync position to client's reported burst origin so the AOE hits the right area
+          if(typeof d.x==='number')rp.x=d.x;
+          if(typeof d.y==='number')rp.y=d.y;
+          doTurboAOE(rp);
+        }
+      }
+      return;
+    }
     if(d.type==='join'){
       if(d.playerId in MP.remoteInputs){
         // Already known (quick rejoin) — refresh ping, restore slot if nulled, resend welcome
@@ -4336,7 +4367,7 @@ function mpHandleMessage(d){
         if(typeof d.maxHp==='number')rp.maxHp=d.maxHp;
         // Rising edge of attacking → process client's melee swing against nearest enemy
         if(d.attacking&&!rp.attacking&&(rp.atkTimer||0)<=0){
-          SFX.swing();
+          SFX.atPos(rp.x,rp.y);SFX.swing();
           rp.atkTimer=ATKCD; // enforce cooldown on host to prevent attack spam
           if(G.lv?.enemies&&(rp.playerMode==='level'||rp.playerMode==='boss')){
             const near=findNearest(G.lv.enemies,rp,TL*1.6);
@@ -4367,7 +4398,7 @@ function mpHandleMessage(d){
         }));
         const newCount=d.projs.length;
         const prevCount=ri._lastProjCount||0;
-        if(newCount>prevCount)SFX.shoot(false);
+        if(newCount>prevCount&&rp){SFX.atPos(rp.x,rp.y);SFX.shoot(false);}
         ri._lastProjCount=newCount;
       }
     }
@@ -4548,19 +4579,22 @@ function mpBroadcastState(){
   if(G.lv?.hazards?.length)payload.hzds=G.lv.hazards.map(h=>[Math.round(h.x),Math.round(h.y),Math.round(h.r),+h.timer.toFixed(2),+(h.maxTimer||h.timer).toFixed(2),h.col||'#ff6600']);
   if(G.lv?.lichTether)payload.tether=[Math.round(G.lv.lichTether.bx),Math.round(G.lv.lichTether.by),Math.round(G.lv.lichTether.px),Math.round(G.lv.lichTether.py),G.lv.lichTether.broken?1:0];
   if(G.lv?.bossPortal)payload.bp=[Math.round(G.lv.bossPortal.x),Math.round(G.lv.bossPortal.y),+(G.lv.bossPortalTimer||0).toFixed(2)];
-  if(G.lv?.boss)payload.boss={
-    x:Math.round(G.lv.boss.x),y:Math.round(G.lv.boss.y),
-    hp:G.lv.boss.hp,maxHp:G.lv.boss.maxHp,sz:G.lv.boss.sz,
-    name:G.lv.boss.name,col:G.lv.boss.col,
-    phase:G.lv.boss.phase||1,
-    phase1color:G.lv.boss.phase1color,phase2color:G.lv.boss.phase2color,
-    hitFlash:G.lv.boss.hitFlash||0,
-    dying:!!G.lv.boss.dying,dyingTimer:G.lv.boss.dyingTimer||0,
-    dyingDuration:G.lv.boss.dyingDuration||3,
-    active:!!G.lv.boss.active,invuln:G.lv.boss.invuln||0,
-    atk:G.lv.boss.atk||10,
-    facing:G.lv.boss.facing||{x:1,y:0},
-  };
+  // In boss mode, always include boss field (null or object) so client cleans up after death
+  if(MODE==='boss'){
+    payload.boss=G.lv?.boss?{
+      x:Math.round(G.lv.boss.x),y:Math.round(G.lv.boss.y),
+      hp:G.lv.boss.hp,maxHp:G.lv.boss.maxHp,sz:G.lv.boss.sz,
+      name:G.lv.boss.name,col:G.lv.boss.col,
+      phase:G.lv.boss.phase||1,
+      phase1color:G.lv.boss.phase1color,phase2color:G.lv.boss.phase2color,
+      hitFlash:G.lv.boss.hitFlash||0,
+      dying:!!G.lv.boss.dying,dyingTimer:G.lv.boss.dyingTimer||0,
+      dyingDuration:G.lv.boss.dyingDuration||3,
+      active:!!G.lv.boss.active,invuln:G.lv.boss.invuln||0,
+      atk:G.lv.boss.atk||10,
+      facing:G.lv.boss.facing||{x:1,y:0},
+    }:null;
+  }
   mpSend(payload);
   G._mpDeaths=[];G._mpRespawns=[];G._mpMapUpd=null;
 }
@@ -4596,8 +4630,12 @@ function mpApplyState(data){
       .forEach(pr=>G.projs.push({
         ...pr,life:0.5,maxLife:0.5,trail:[],_remote:true,
       }));
-    const newRemoteCount=data.projs.filter(pr=>pr.owner!==MP.playerId).length;
-    if(newRemoteCount>lastCount)SFX.shoot(false);
+    const remoteProjs=data.projs.filter(pr=>pr.owner!==MP.playerId);
+    const newRemoteCount=remoteProjs.length;
+    if(newRemoteCount>lastCount&&remoteProjs.length){
+      const avg=remoteProjs[0];
+      SFX.atPos(avg.x,avg.y);SFX.shoot(false);
+    }
     G._remoteProjCount=newRemoteCount;
   }
   // Map tile updates from host (secret reveals, doors opening, etc.)
@@ -4634,6 +4672,9 @@ function mpApplyState(data){
     }
     if('tether' in data){
       G.lv.lichTether=data.tether?{bx:data.tether[0],by:data.tether[1],px:data.tether[2],py:data.tether[3],broken:!!data.tether[4]}:null;
+    } else if(MODE==='boss'&&G.lv.lichTether){
+      // Tether wasn't broadcast — clear it (host says it's gone)
+      G.lv.lichTether=null;
     }
     if('bp' in data){
       if(data.bp){G.lv.bossPortal={x:data.bp[0],y:data.bp[1]};G.lv.bossPortalTimer=data.bp[2];}
@@ -4657,6 +4698,7 @@ function mpApplyState(data){
     if(data.boss){
       if(!G.lv.boss){G.lv.boss={...data.boss};}
       else{
+        const wasAlive=!G.lv.boss.dying;
         G.lv.boss.x=lerp(G.lv.boss.x,data.boss.x,.35);
         G.lv.boss.y=lerp(G.lv.boss.y,data.boss.y,.35);
         Object.assign(G.lv.boss,{
@@ -4669,8 +4711,32 @@ function mpApplyState(data){
           phase1color:data.boss.phase1color,phase2color:data.boss.phase2color,
           atk:data.boss.atk,
         });
+        // Run death FX locally when boss transitions to dying
+        if(wasAlive&&data.boss.dying&&!G.lv.boss._deathFxFired){
+          G.lv.boss._deathFxFired=true;
+          if(SFX.bossDie)SFX.bossDie();
+          addShake(18);G.hitStop=8;
+          G.lv.warnings=[];G.lv.hazards=[];G.lv.lichTether=null;
+          // Mirror the host's blast cascade locally so client sees the same FX
+          const bx=G.lv.boss.x,by=G.lv.boss.y,bcol=G.lv.boss.col||'#ff4444';
+          const blasts=[[0,0,0,26,1.0],[280,-TL,TL*.6,18,.7],[460,TL*.8,-TL*.5,18,.7],
+            [620,TL*1.2,TL,20,.8],[820,-TL*.6,-TL*.8,18,.7],[1050,0,0,30,1.0],
+            [1300,TL*.5,TL*.8,18,.6],[1550,-TL*1.1,TL*.3,20,.7],
+            [1800,0,0,40,1.2],[2100,0,0,60,1.5]];
+          blasts.forEach(([delay,ox,oy,pc,sh])=>{
+            setTimeout(()=>{
+              spawnP(bx+ox,by+oy,bcol,pc);
+              spawnP(bx+ox,by+oy,'#ffffff',Math.floor(pc*.4));
+              addShake(sh*8);
+              if(SFX.boom){SFX.atPos(bx+ox,by+oy);SFX.boom();}
+            },delay);
+          });
+        }
       }
-    } else if(G.lv.boss){G.lv.boss=null;}
+    } else if(G.lv.boss){
+      // Boss removed by host (death sequence completed)
+      G.lv.boss=null;
+    }
   }
   // Handle respawn notifications from host (any player slot)
   if(!MP.isHost&&data.respawns&&data.respawns.length){
@@ -4719,7 +4785,7 @@ function mpApplyState(data){
         G.dyingEnemies.push({x:e.x,y:e.y,col:e.col||'#aaa',sz:TL*(e.sz||.6),
           vx:(Math.random()-.5)*55,vy:-35-Math.random()*65,
           angle:Math.random()*Math.PI*2,timer:.3,maxTimer:.3});
-        if(SFX.enemyDie)SFX.enemyDie(e.type);
+        if(SFX.enemyDie){SFX.atPos(e.x,e.y);SFX.enemyDie(e.type);}
       }
     });
     G.lv.enemies=G.lv.enemies.filter(e=>!e.eid||!deadSet.has(e.eid));
@@ -4774,14 +4840,14 @@ function mpApplyState(data){
     // Detect items that disappeared this frame → play pickup feedback for each type
     oldMap.forEach((it,key)=>{
       if(newKeys.has(key))return;
-      // Item picked up by some player — play sound and burst at its position
+      // Item picked up by some player — play sound and burst at its position (spatial volume)
       switch(it.type){
-        case 'gold':if(SFX.gold)SFX.gold();addFT('+'+(it.val||0)+'g',it.x,it.y,'#f5c542');break;
-        case 'crystal':if(SFX.crystal)SFX.crystal();addFT('+1 ✦',it.x,it.y,'#cc88ff');break;
-        case 'food':if(SFX.food)SFX.food();spawnP(it.x,it.y,'#44ff88',6);break;
-        case 'key':if(SFX.key)SFX.key();spawnP(it.x,it.y,'#f5e642',6);break;
-        case 'chest':if(SFX.chest)SFX.chest();spawnP(it.x,it.y,'#c8a030',12);break;
-        case 'powerup':if(SFX.powerup)SFX.powerup();spawnP(it.x,it.y,'#44ffcc',14);break;
+        case 'gold':if(SFX.gold){SFX.atPos(it.x,it.y);SFX.gold();}addFT('+'+(it.val||0)+'g',it.x,it.y,'#f5c542');break;
+        case 'crystal':if(SFX.crystal){SFX.atPos(it.x,it.y);SFX.crystal();}addFT('+1 ✦',it.x,it.y,'#cc88ff');break;
+        case 'food':if(SFX.food){SFX.atPos(it.x,it.y);SFX.food();}spawnP(it.x,it.y,'#44ff88',6);break;
+        case 'key':if(SFX.key){SFX.atPos(it.x,it.y);SFX.key();}spawnP(it.x,it.y,'#f5e642',6);break;
+        case 'chest':if(SFX.chest){SFX.atPos(it.x,it.y);SFX.chest();}spawnP(it.x,it.y,'#c8a030',12);break;
+        case 'powerup':if(SFX.powerup){SFX.atPos(it.x,it.y);SFX.powerup();}spawnP(it.x,it.y,'#44ffcc',14);break;
       }
     });
     G.lv.items=data.items.map(a=>{
@@ -4808,7 +4874,7 @@ function mpApplyState(data){
           G.parts.push({x:sp.x,y:sp.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
             life:.4+Math.random()*.3,ml:.7,sz:4+Math.random()*5,col:'#ff8800'});
         }
-        if(SFX.boom)SFX.boom();
+        if(SFX.boom){SFX.atPos(sp.x,sp.y);SFX.boom();}
       }
     });
   }
@@ -4846,7 +4912,7 @@ function mpApplyState(data){
     if(snap.charPrimary)rp.charPrimary=snap.charPrimary;
     if(snap.charAccent)rp.charAccent=snap.charAccent;
     rp.turbo=snap.turbo;rp.item=snap.item;
-    if(snap.attacking&&!rp.attacking)SFX.swing();
+    if(snap.attacking&&!rp.attacking){SFX.atPos(rp.x,rp.y);SFX.swing();}
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
     rp.playerMode=snap.playerMode||'hub';
   });
@@ -5394,7 +5460,7 @@ function updateEnemies(dt){
 }
 
 function explodeSuicideBomber(e){
-  SFX.boom();
+  SFX.atPos(e.x,e.y);SFX.boom();
   const blastR=TL*3.0;
   // Damage every player in blast range — full at centre, falls off to ~15% at edge
   eachPlayer(pl=>{
@@ -5538,7 +5604,7 @@ function killEnemy(e,overkill=0){
   });
   if(e.g){const g=rand(e.g[0],e.g[1]);if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
   if(Math.random()<.18)G.lv.items.push({type:'food',x:e.x,y:e.y,val:rand(10,20),bob:Math.random()*Math.PI*2});
-  SFX.enemyDie(e.type);
+  SFX.atPos(e.x,e.y);SFX.enemyDie(e.type);
 
   // Kill chain — resets after 2s of no kills, scales hit-stop
   if(!G.killChain||G.t-G.killChainT>2){G.killChain=0;}
@@ -5580,6 +5646,12 @@ function killEnemy(e,overkill=0){
 
 function startBossDeath(b,bx,by){
   b.dying=true;b.dyingTimer=0;b.dyingDuration=3.0;
+  // Clear any lingering attacks (soul tether beam, hazards)
+  if(G.lv){
+    G.lv.lichTether=null;
+    G.lv.warnings=[];
+    G.lv.hazards=[];
+  }
   const bcol=b.col,bout=b.out||'#fff';
 
   // Wipe adds — staggered so they pop one by one
@@ -5621,6 +5693,7 @@ function startBossDeath(b,bx,by){
       // White flash particle
       G.parts.push({x:ex,y:ey,vx:0,vy:0,life:.08,ml:.08,sz:TL*3,col:'#ffffff'});
       addShake(sh*8);
+      SFX.atPos(ex,ey);
       if(delay>1000)SFX.boom();else SFX.impact();
     },delay);
   });
@@ -5677,13 +5750,41 @@ document.getElementById('lucont').addEventListener('click',()=>{
 // ═══════════════════════════════════════
 const SFX=(()=>{
   let AC=null,MASTER=null;
+  // Spatial audio: atPos(x,y) sets the next-call gain factor based on distance from local player
+  let _nextSpatial=null;
+  let _activeSpatialNode=null;
+  function atPos(x,y){_nextSpatial=(typeof x==='number'&&typeof y==='number')?{x,y}:null;}
+  function _computeSpatial(pos){
+    if(typeof G==='undefined'||!G.p||(MODE!=='level'&&MODE!=='boss'))return 1;
+    const d=Math.hypot(pos.x-G.p.x,pos.y-G.p.y);
+    if(d<TL*5)return 1;
+    if(d>TL*22)return .04;
+    return 1-(d-TL*5)/(TL*17)*.96;
+  }
   function ac(){
     if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();
     if(AC.state==='suspended')AC.resume();
     if(!MASTER){MASTER=AC.createGain();MASTER.gain.value=1;MASTER.connect(AC.destination);}
     return AC;
   }
-  function dest(){ac();return MASTER;}
+  function dest(){
+    ac();
+    // If a spatial position is queued, create (or reuse) a gain node that scales by distance
+    if(_nextSpatial&&!_activeSpatialNode){
+      const factor=_computeSpatial(_nextSpatial);
+      _nextSpatial=null;
+      if(factor<0.999){
+        _activeSpatialNode=AC.createGain();
+        _activeSpatialNode.gain.value=factor;
+        _activeSpatialNode.connect(MASTER);
+        // Reset shortly so the next unrelated SFX starts fresh (one animation frame is plenty)
+        setTimeout(()=>{_activeSpatialNode=null;},16);
+      } else {
+        // Full volume — no need for an extra node
+      }
+    }
+    return _activeSpatialNode||MASTER;
+  }
   function setMute(m){if(MASTER)MASTER.gain.value=m?0:1;}
   function noise(dur){
     const c=ac(),buf=c.createBuffer(1,Math.ceil(c.sampleRate*dur),c.sampleRate),d=buf.getChannelData(0);
@@ -5907,7 +6008,7 @@ const SFX=(()=>{
   }
 
   return{hit,swing,shoot,impact,turboFire,enemyDie,boom,bossHit,bossDie,
-    gold,crystal,hubCrystal,food,key,powerup,chest,playerHurt,stompWarn,levelUp,wallBreak,spike,setMute};
+    gold,crystal,hubCrystal,food,key,powerup,chest,playerHurt,stompWarn,levelUp,wallBreak,spike,setMute,atPos};
 })();
 
 // ═══════════════════════════════════════
@@ -8303,6 +8404,42 @@ function updHUD(){
   }
   // Portrait
   drawHudPortrait();
+  // Team cards (multiplayer)
+  updTeamCards();
+}
+
+function updTeamCards(){
+  const el=document.getElementById('team-cards');
+  if(!el)return;
+  // Only show in MP and during gameplay
+  if(!MP.enabled||(MODE!=='level'&&MODE!=='boss'&&MODE!=='hub'&&MODE!=='shop')){
+    if(el.children.length)el.innerHTML='';
+    return;
+  }
+  // Render each remote player slot (skip null/local)
+  const cards=[];
+  (G.players||[]).forEach((p,i)=>{
+    if(!p||i===MP.localPlayerIdx)return;
+    const hpFrac=Math.max(0,Math.min(1,(p.hp||0)/(p.maxHp||100)));
+    const dead=hpFrac<=0;
+    const col=p.charAccent||p.charPrimary||'#888';
+    const lives=Math.max(0,p.lives===undefined?3:p.lives);
+    const dist=G.p&&(MODE==='level'||MODE==='boss')?Math.hypot((p.x||0)-G.p.x,(p.y||0)-G.p.y):0;
+    const farTag=(MODE==='level'||MODE==='boss')&&dist>TL*12?'<span style="color:#774">·far</span>':'';
+    cards.push(`<div class="team-card${dead?' dead':''}">
+      <div class="team-card-dot" style="background:${col};color:${col}"></div>
+      <div class="team-card-info">
+        <div class="team-card-name">P${i+1} ${farTag}</div>
+        <div class="team-card-hp"><div class="team-card-hpf" style="width:${hpFrac*100}%;background:${dead?'#444':'linear-gradient(90deg,#c8302a,#e85040)'}"></div></div>
+        <div class="team-card-stats"><span>⚜${p.gold||0}</span><span>${'♥'.repeat(lives)||'·'}</span>${p.item?'<span style="color:#88ffcc">'+p.item.replace('_',' ')+'</span>':''}</div>
+      </div>
+    </div>`);
+  });
+  const html=cards.join('');
+  if(el._lastHtml!==html){
+    el.innerHTML=html;
+    el._lastHtml=html;
+  }
 }
 
 // ═══════════════════════════════════════
