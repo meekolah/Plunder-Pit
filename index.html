@@ -214,7 +214,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.71';
+const VERSION='0.73';
 const TL=38, MW=36, MH=36;
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2282,7 +2282,7 @@ function updateBoss(dt){
     p.hp-=dmg;p.invuln=.7;
     addFT('-'+dmg,p.x,p.y-20,'#ff4444');
     spawnP(p.x,p.y,'#cc2222',6);
-    if(p.hp<=0)onDeath();
+    if(p.hp<=0)onDeath(p);
   }
 }
 
@@ -2400,7 +2400,7 @@ function updateLich(b,p,dt){
       const broken=nearSarc||!hasLOS(b.x,b.y,p.x,p.y);
       if(!broken){
         p.hp-=b.atk*.5*dt;G.hurtFlash=Math.min(1,G.hurtFlash+.08*dt);
-        if(p.hp<=0)onDeath();
+        if(p.hp<=0)onDeath(p);
         // Drag player toward Lich
         const dx=b.x-p.x,dy=b.y-p.y,dl=Math.hypot(dx,dy)||1;
         const pullSpd=18+b.phase*6;
@@ -3122,7 +3122,7 @@ function updatePlayer(dt){
       const sPhase=((tx*7+ty*13)%97)/97;
       const sUp=Math.sin((G.t/2.5+sPhase)*Math.PI*2)>0;
       if(sUp){
-        p.hp-=28*dt;if(p.hp<=0)onDeath();
+        p.hp-=28*dt;if(p.hp<=0)onDeath(p);
         p._spikeSnd=(p._spikeSnd||0)-dt;
         if(p._spikeSnd<=0){SFX.spike();SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.4);p._spikeSnd=.55;}
       } else {p._spikeSnd=0;}
@@ -3697,7 +3697,7 @@ function updateProjs(dt){
       p.hp-=pr.atk;p.invuln=.65;
       addShake(4);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.55);G.hitStop=2;
       addFT('-'+Math.floor(pr.atk),p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);
-      if(p.hp<=0)onDeath();return false;
+      if(p.hp<=0)onDeath(p);return false;
     }
     if(!pr.isBoss&&(!MP.enabled||MP.isHost)){
       for(const e of G.lv.enemies){
@@ -3903,6 +3903,7 @@ function updateHazards(dt){
 
 function drawHazards(){
   if(!G.lv?.hazards?.length)return;
+  if(MP.enabled&&!MP.isHost)return; // client never renders hazards (host runs them)
   G.lv.hazards.forEach(h=>{
     const f=h.timer/h.maxTimer;
     const pulse=.7+.3*Math.sin(G.t*6+h.ph);
@@ -3938,6 +3939,8 @@ function addWarning(x,y,{delay=1.5,r=TL*1.3,atk=10,hazardR,hazardDur=2.5,col='#f
 
 function updateWarnings(dt){
   if(!G.lv?.warnings)return;
+  // Defensive: clients should never have warnings — only the host runs boss telegraphs
+  if(MP.enabled&&!MP.isHost){G.lv.warnings=[];return;}
   G.lv.warnings=G.lv.warnings.filter(w=>{
     w.timer-=dt;
     if(w.timer<=0){
@@ -3951,6 +3954,7 @@ function updateWarnings(dt){
 
 function drawWarnings(){
   if(!G.lv?.warnings?.length)return;
+  if(MP.enabled&&!MP.isHost)return; // client never renders warnings
   G.lv.warnings.forEach(w=>{
     const f=1-w.timer/w.maxTimer; // 0→1 as countdown progresses
     const spd=6+f*14;
@@ -4434,10 +4438,11 @@ function mpBroadcastState(){
     })),
     enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,sz:e.sz,type:e.type}):null),
     deaths:G._mpDeaths||[],
+    respawns:G._mpRespawns||[],
     items:(G.lv?.items||[]).map(it=>[it.type,Math.round(it.x),Math.round(it.y),it.val||0,it.id||it.realm||0]),
     spawners:(G.lv?.spawners||[]).map(s=>s?[s.hp,s.alive===false?0:1,s.activeGrunts||0,s.activated?1:0]:null),
   });
-  G._mpDeaths=[];
+  G._mpDeaths=[];G._mpRespawns=[];
 }
 
 
@@ -4474,6 +4479,22 @@ function mpApplyState(data){
     const newRemoteCount=data.projs.filter(pr=>pr.owner!==MP.playerId).length;
     if(newRemoteCount>lastCount)SFX.shoot(false);
     G._remoteProjCount=newRemoteCount;
+  }
+  // Handle respawn notifications from host
+  if(!MP.isHost&&data.respawns&&data.respawns.includes(MP.localPlayerIdx)){
+    // Show death overlay for the local player
+    const rov=document.getElementById('respawnov');
+    const heartsEl=document.getElementById('respawn-hearts');
+    const msgEl=document.getElementById('respawn-msg');
+    if(G.p.lives===undefined)G.p.lives=3;
+    if(G.p.lives>0)G.p.lives--;
+    if(heartsEl)heartsEl.textContent='♥'.repeat(Math.max(0,G.p.lives))+'♡'.repeat(Math.max(0,3-G.p.lives));
+    if(msgEl)msgEl.textContent='';
+    rov?.classList.remove('hidden');
+    setTimeout(()=>rov?.classList.add('hidden'),1800);
+    // Force-snap to host's playerStart instead of lerping
+    if(G.lv?.playerStart){G.p.x=G.lv.playerStart.x;G.p.y=G.lv.playerStart.y;}
+    G.p.hp=G.p.maxHp;G.projs=G.projs.filter(p=>!p._local);
   }
   // Handle enemy deaths from host — remove and trigger death FX
   if(!MP.isHost&&data.deaths&&data.deaths.length&&G.lv?.enemies){
@@ -4947,7 +4968,7 @@ function updateEnemies(dt){
             const kbSpd=320;
             p.kbVx=ddx*kbSpd;p.kbVy=ddy*kbSpd;p.kbTimer=.18;
             addFT('-'+e.atk,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',8);
-            if(p.hp<=0)onDeath();
+            if(p.hp<=0)onDeath(p);
           }
         }
         // Ground stomp AoE
@@ -4960,7 +4981,7 @@ function updateEnemies(dt){
           if(d<TL*3.2&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
             const dmg=Math.floor(e.atk*.55);p.hp-=dmg;p.invuln=.5;
             addShake(6);SFX.playerHurt();
-            addFT('STOMP! -'+dmg,p.x,p.y-20,'#ff6600');if(p.hp<=0)onDeath();
+            addFT('STOMP! -'+dmg,p.x,p.y-20,'#ff6600');if(p.hp<=0)onDeath(p);
           }
           // Stomp also knocks back and damages nearby enemies — golem doesn't pick sides
           G.lv.enemies.forEach(other=>{
@@ -5008,7 +5029,7 @@ function updateEnemies(dt){
             p.kbTimer=.22;
             addShake(isHeavy?6:3);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.65);
             addFT('-'+e.atk,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);
-            if(p.hp<=0)onDeath();
+            if(p.hp<=0)onDeath(p);
           }
           if(e.lungeT<=0){e.lunging=false;e.atkTimer=effATKCD*.5;}
 
@@ -5572,33 +5593,54 @@ const SFX=(()=>{
 // ═══════════════════════════════════════
 // DEATH
 // ═══════════════════════════════════════
-function onDeath(){
-  G.p.hp=0;
-  if(G.p.lives===undefined)G.p.lives=3;
+function onDeath(p){
+  p=p||G.p;
+  p.hp=0;
+  if(p.lives===undefined)p.lives=3;
+  const isLocal=(p===G.p);
 
-  if(G.p.lives>0){
+  if(p.lives>0){
     // Mid-run death — lose a life
-    G.p.lives--;
+    p.lives--;
+    // Gold: 25% permanently lost, 25% dropped as recoverable pile at death spot, 50% kept
+    const tax=Math.floor((p.gold||0)*.25);
+    const pile=Math.floor((p.gold||0)*.25);
+    p.gold=Math.max(0,(p.gold||0)-tax-pile);
+    // Capture death position BEFORE respawn snap
+    const dx=p.x,dy=p.y;
+    // Drop gold pile in the current level at the death location
+    if(pile>0&&G.lv?.items){
+      G.lv.items.push({type:'gold',x:dx,y:dy,val:pile,
+        bob:Math.random()*Math.PI*2,deathPile:true});
+    }
+
+    // In MP, remote players get instant respawn without taking over the host's UI
+    if(MP.enabled&&!isLocal){
+      if(G.lv?.playerStart){p.x=G.lv.playerStart.x;p.y=G.lv.playerStart.y;}
+      p.hp=p.maxHp;p.invuln=2.0;p.turbo=0;p.item=null;p.itemTimer=0;
+      // Notify client of respawn so they can show their own death overlay
+      const slot=G.players.indexOf(p);
+      if(slot>=0)(G._mpRespawns=G._mpRespawns||[]).push(slot);
+      return;
+    }
+
+    // Local player death — full UI flow
     MODE='death';
-    // Gold: 25% permanently lost, 25% dropped as recoverable pile, 50% kept
-    const tax=Math.floor(G.p.gold*.25);
-    const pile=Math.floor(G.p.gold*.25);
-    G.p.gold=Math.max(0,G.p.gold-tax-pile);
-    // Store pile for placement on respawn
-    if(pile>0)G.deathPile={realm:G.curRealm?.id,lvNum:G.curLvNum,val:pile};
-    // Respawn overlay
     const rov=document.getElementById('respawnov');
     const heartsEl=document.getElementById('respawn-hearts');
     const msgEl=document.getElementById('respawn-msg');
-    if(heartsEl)heartsEl.textContent='♥'.repeat(G.p.lives)+'♡'.repeat(Math.max(0,3-G.p.lives));
-    if(msgEl)msgEl.textContent=tax>0?`${tax}g lost · ${pile}g dropped on floor`:'';
+    if(heartsEl)heartsEl.textContent='♥'.repeat(p.lives)+'♡'.repeat(Math.max(0,3-p.lives));
+    if(msgEl)msgEl.textContent=tax>0?`${tax}g lost · ${pile}g dropped where you fell`:(pile>0?`${pile}g dropped where you fell`:'');
     rov?.classList.remove('hidden');
     setTimeout(()=>{
       rov?.classList.add('hidden');
-      G.p.hp=G.p.maxHp;G.p.invuln=1.8;
-      G.p.turbo=0;G.p.item=null;G.p.itemTimer=0;
-      G.projs=[];G.parts=[];G.ftexts=[];
-      startLevel(G.curRealm,G.curLvNum);
+      p.hp=p.maxHp;p.invuln=1.8;
+      p.turbo=0;p.item=null;p.itemTimer=0;
+      // Same level — just reset position to playerStart and clear transient effects
+      if(G.lv?.playerStart){p.x=G.lv.playerStart.x;p.y=G.lv.playerStart.y;}
+      G.projs=G.projs.filter(pr=>!pr._local);
+      G.ftexts=[];
+      MODE='level';
     },1800);
     return;
   }
