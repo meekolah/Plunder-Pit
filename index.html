@@ -225,13 +225,51 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='0.82';
+const VERSION='1.09';
 const TL=38, MW=36, MH=36;
+// Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
+const CAMZOOM=1.42;
+// Convert a world position to screen pixels, accounting for camera + zoom. Used by
+// screen-space overlays (turbo spotlight, etc.) that are anchored to a world point.
+function worldToScreen(wx,wy){
+  const z=(MODE==='level'||MODE==='boss')?CAMZOOM:1;
+  return {
+    x:(wx-G.cam.x-cv.width/2)*z+cv.width/2,
+    y:(wy-G.cam.y-cv.height/2)*z+cv.height/2,
+  };
+}
 // Set version display once DOM is ready
 document.addEventListener('DOMContentLoaded',()=>{
   const vt=document.getElementById('ver-tag');if(vt)vt.textContent='v'+VERSION;
 });
 const TWALL=0,TFLOOR=1,TDOOR=2,TSWITCH=3,TEXIT=4,TSPIKE=5,TSECRET=6;
+
+// ── FLOOR MUTATORS — random conditions that change how a floor plays. Announced on
+// entry; one active per non-boss floor (~60% chance). Each is a cheap stat tweak that
+// composes with the class kits to create emergent "oh no" co-op moments. ──
+const MUTATORS=[
+  {id:'bounty',  name:'BOUNTY',   desc:'Double gold — but enemies are tougher', col:'#ffcc44'},
+  {id:'glass',   name:'GLASS',    desc:'Everyone deals heavy damage', col:'#ff5566'},
+  {id:'fortune', name:'FORTUNE',  desc:'2× turbo charge — but weaker basic attacks', col:'#44ddff'},
+  {id:'haste',   name:'HASTE',    desc:'You move much faster',        col:'#66ff99'},
+  {id:'vampiric',name:'VAMPIRIC', desc:'Heal only by killing — no food', col:'#cc4488'},
+  {id:'dark',    name:'DARKNESS', desc:'Reduced vision — but enemies are blind too', col:'#9955cc'},
+];
+// True when the current floor has the given mutator active
+function MUT(id){return !!(G.lv&&G.lv.mutator===id);}
+// Roll a mutator for a floor — boss floors stay clean, otherwise ~60% chance of one
+function rollMutator(isBoss){
+  if(isBoss)return null;
+  if(Math.random()>0.6)return null;
+  return MUTATORS[Math.floor(Math.random()*MUTATORS.length)].id;
+}
+function mutatorDef(id){return MUTATORS.find(m=>m.id===id)||null;}
+// Announce the active mutator with a banner under the realm label
+function announceMutator(){
+  const m=mutatorDef(G.lv&&G.lv.mutator);
+  if(!m)return;
+  showMsg('✦ '+m.name+' — '+m.desc);
+}
 
 // ═══════════════════════════════════════
 // REALM DEFINITIONS
@@ -488,7 +526,7 @@ function procInput(dt){
   // ── PC mouse aim: hold LMB → aim at cursor, freeze movement, fire ──
   if(mouseBtn&&(MODE==='level'||MODE==='boss'||MODE==='hub')){
     const p=G.p;
-    const spx=p.x-G.cam.x,spy=p.y-G.cam.y;
+    const _ps=worldToScreen(p.x,p.y),spx=_ps.x,spy=_ps.y;
     const mdx=mousePos.x-spx,mdy=mousePos.y-spy,ml=Math.hypot(mdx,mdy);
     if(ml>8){p.facing.x=mdx/ml;p.facing.y=mdy/ml;}
     if(MODE!=='hub'){} // hub moves freely; level speed handled in updatePlayer
@@ -2020,8 +2058,8 @@ function breakBarrel(b){
   const numGold=rand(1,3);
   for(let g=0;g<numGold;g++)
     G.lv.items.push({type:'gold',...scatter(),val:rand(25,70)});
-  // Food — 40% chance
-  if(Math.random()<.4)
+  // Food — 40% chance (suppressed on Vampiric floors: kills are the only heal source)
+  if(!MUT('vampiric')&&Math.random()<.4)
     G.lv.items.push({type:'food',...scatter(),val:rand(18,38)});
   // Crystal — 18% chance
   if(Math.random()<.18&&G.curRealm)
@@ -2300,7 +2338,7 @@ function updateBoss(dt){
     if(pl.invuln>0)return;
     const dc2=dist(b,pl);
     if(dc2<TL*b.sz*.9){
-      const dmg=Math.floor(b.atk*chargeMul*(b.phase>=3?1.4:1));
+      const dmg=Math.floor(b.atk*chargeMul*(b.phase>=3?1.4:1)*(pl.charClass==='dwarf'?0.88:1));
       pl.hp-=dmg;pl.invuln=.7;
       addFT('-'+dmg,pl.x,pl.y-20,'#ff4444');
       spawnP(pl.x,pl.y,'#cc2222',6);
@@ -2853,6 +2891,16 @@ function drawSummary(){
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
+  G.lv.mutator=rollMutator(false); // roll the floor mutator (host-authoritative; synced to clients)
+  // VAMPIRIC curse — kills are the only heal source. Strip passive open-floor food
+  // (hidden secret-cache food stays, so exploration is still rewarded).
+  if(G.lv.mutator==='vampiric'){
+    G.lv.items=(G.lv.items||[]).filter(it=>!(it.type==='food'&&!it.hidden));
+  }
+  // BOUNTY curse — "the vault is guarded": enemies have +30% HP
+  if(G.lv.mutator==='bounty'){
+    (G.lv.enemies||[]).forEach(e=>{if(e&&e.maxHp){e.maxHp=Math.ceil(e.maxHp*1.3);e.hp=e.maxHp;}});
+  }
   if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
   // Place recoverable death pile if one exists for this floor
   if(G.deathPile&&G.deathPile.realm===realm.id&&G.deathPile.lvNum===lvNum){
@@ -2871,6 +2919,7 @@ function startLevel(realm,lvNum){
   MODE='level';
   document.getElementById('hud').classList.remove('hidden');
   showRLabel(realm.name+(lvNum>0?' — Level 2':' — Level 1'));
+  if(G.lv.mutator)setTimeout(announceMutator,900); // banner shortly after the realm label
 }
 
 function startBoss(){
@@ -2984,17 +3033,28 @@ function checkUnlocks(){
 // ═══════════════════════════════════════
 // SHOP
 // ═══════════════════════════════════════
-// Stat groups for bar-chart shop — no item names, just stats
-// Cost scales at ×1.6 per previous purchase of that stat — prevents early maxing
-const sc=(base,key)=>Math.min(1000,Math.round(base*Math.pow(1.6,G.p?.upgrades?.[key]||0)));
+// Permanent stat upgrades cost 100g per bar-point of stat (the displayed 0-99 value).
+// Bar→raw conversion: ATK 1:1, MaxHP 1 bar ≈ 4.2 raw, SPD 1 bar ≈ 1.82 raw.
+// So "+10 stat" = +10 raw ATK | +42 raw MaxHP | +18 raw SPD — all priced at 1000g.
+// Healing is consumable (restores current HP only) and stays affordable.
+const BAR_TO_RAW={atk:1,maxhp:4.2,spd:1.82};
+function barUp(stat,bar){
+  const raw=Math.round(bar*BAR_TO_RAW[stat]);
+  if(stat==='atk')G.p.atk=Math.min(999,G.p.atk+raw);
+  else if(stat==='maxhp'){
+    G.p.maxHp=Math.min(999,G.p.maxHp+raw);
+    G.p.hp=Math.min(G.p.hp+raw,G.p.maxHp);
+  }
+  else if(stat==='spd')G.p.spd=Math.min(999,G.p.spd+raw);
+}
 const STAT_GROUPS=[
   {
     key:'hp', label:'HP', col:'#cc3333',
     val:()=>`${Math.floor(G.p.hp)} / ${G.p.maxHp}`,
     frac:()=>G.p.hp/Math.max(G.p.maxHp,1),
     ups:[
-      {lbl:'Heal +40', c:()=>15, f:()=>{G.p.hp=Math.min(G.p.hp+40,G.p.maxHp);}},
-      {lbl:'Heal +70', c:()=>28, f:()=>{G.p.hp=Math.min(G.p.hp+70,G.p.maxHp);}},
+      {lbl:'Heal +40', c:()=>100, f:()=>{G.p.hp=Math.min(G.p.hp+40,G.p.maxHp);}},
+      {lbl:'Heal +70', c:()=>200, f:()=>{G.p.hp=Math.min(G.p.hp+70,G.p.maxHp);}},
     ],
   },
   {
@@ -3002,9 +3062,9 @@ const STAT_GROUPS=[
     val:()=>Math.max(1,Math.min(99,Math.round((G.p.maxHp-85)/4.2))),
     frac:()=>Math.min((G.p.maxHp-85)/313,1),
     ups:[
-      {lbl:'+25', c:()=>sc(28,'maxhp'), f:()=>{G.p.maxHp=Math.min(999,G.p.maxHp+25);G.p.hp=Math.min(G.p.hp+25,G.p.maxHp);G.p.upgrades.maxhp++;}},
-      {lbl:'+50', c:()=>sc(52,'maxhp'), f:()=>{G.p.maxHp=Math.min(999,G.p.maxHp+50);G.p.hp=Math.min(G.p.hp+50,G.p.maxHp);G.p.upgrades.maxhp++;}},
-      {lbl:'+10 ✦', c:()=>1000, f:()=>{G.p.maxHp=Math.min(999,G.p.maxHp+10);G.p.hp=Math.min(G.p.hp+10,G.p.maxHp);}},
+      {lbl:'+5',  c:()=>500,  f:()=>barUp('maxhp',5)},
+      {lbl:'+10', c:()=>1000, f:()=>barUp('maxhp',10)},
+      {lbl:'+20', c:()=>2000, f:()=>barUp('maxhp',20)},
     ],
   },
   {
@@ -3012,10 +3072,9 @@ const STAT_GROUPS=[
     val:()=>Math.max(1,Math.min(99,G.p.atk-15)),
     frac:()=>Math.min((G.p.atk-15)/84,1),
     ups:[
-      {lbl:'+6',  c:()=>sc(32,'atk'), f:()=>{G.p.atk=Math.min(999,G.p.atk+6); G.p.upgrades.atk++;}},
-      {lbl:'+12', c:()=>sc(55,'atk'), f:()=>{G.p.atk=Math.min(999,G.p.atk+12);G.p.upgrades.atk++;}},
-      {lbl:'+20', c:()=>sc(90,'atk'), f:()=>{G.p.atk=Math.min(999,G.p.atk+20);G.p.upgrades.atk++;}},
-      {lbl:'+10 ✦', c:()=>1000, f:()=>{G.p.atk=Math.min(999,G.p.atk+10);}},
+      {lbl:'+5',  c:()=>500,  f:()=>barUp('atk',5)},
+      {lbl:'+10', c:()=>1000, f:()=>barUp('atk',10)},
+      {lbl:'+20', c:()=>2000, f:()=>barUp('atk',20)},
     ],
   },
   {
@@ -3023,9 +3082,9 @@ const STAT_GROUPS=[
     val:()=>Math.max(1,Math.min(99,Math.round((G.p.spd-130)/1.82))),
     frac:()=>Math.min((G.p.spd-130)/170,1),
     ups:[
-      {lbl:'+15', c:()=>sc(38,'spd'), f:()=>{G.p.spd=Math.min(999,G.p.spd+15);G.p.upgrades.spd++;}},
-      {lbl:'+30', c:()=>sc(68,'spd'), f:()=>{G.p.spd=Math.min(999,G.p.spd+30);G.p.upgrades.spd++;}},
-      {lbl:'+10 ✦', c:()=>1000, f:()=>{G.p.spd=Math.min(999,G.p.spd+10);}},
+      {lbl:'+5',  c:()=>500,  f:()=>barUp('spd',5)},
+      {lbl:'+10', c:()=>1000, f:()=>barUp('spd',10)},
+      {lbl:'+20', c:()=>2000, f:()=>barUp('spd',20)},
     ],
   },
   {
@@ -3147,7 +3206,7 @@ function updatePlayer(dt){
   const len=Math.hypot(dx,dy);
   // Only update facing from movement when not aiming — preserves mouse/joystick aim direction
   if(len>0){dx/=len;dy/=len;if(len>.1&&!G.inp.atk){p.facing.x=dx;p.facing.y=dy;}}
-  const spd=p.spd*(G.inp.atk?0.5:1);
+  const spd=p.spd*(G.inp.atk?0.5:1)*(MUT('haste')?1.4:1); // HASTE mutator — faster movement
   const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
   if(!solid(G.lv.map,nx,p.y))p.x=nx;
   if(!solid(G.lv.map,p.x,ny))p.y=ny;
@@ -3219,10 +3278,12 @@ function updatePlayer(dt){
     useItem();keys['KeyR']=false;
   }
 
-  // Auto-melee: walking toward enemy OR spawner in range automatically triggers
+  // Auto-melee: walking toward enemy OR spawner in range automatically triggers.
+  // Non-melee classes (wizard) skip this entirely — they should rely on projectiles.
   const isMoving=(Math.abs(G.inp.dx)>.1||Math.abs(G.inp.dy)>.1);
   if(isMoving)p.walkPhase=(p.walkPhase||0)+dt*(p.spd*.038);
-  if(isMoving&&p.atkTimer<=0&&!p.attacking&&!G.inp.atk){
+  const isMeleeClass=meleeProfile(p).dmgMul>=1;
+  if(isMeleeClass&&isMoving&&p.atkTimer<=0&&!p.attacking&&!G.inp.atk){
     const moveAngle=Math.atan2(G.inp.dy,G.inp.dx);
     const autoTarget=findNearest(G.lv.enemies,p,TL*2.0);
     if(autoTarget){
@@ -3250,10 +3311,13 @@ function updatePlayer(dt){
     }
   }
 
-  // Smart attack: melee if enemy in range, otherwise projectile
+  // Smart attack: melee if enemy in range, otherwise projectile.
+  // Range is class-aware — wizards have a much smaller melee window, so they
+  // default to ranged unless an enemy is right on top of them.
   if(G.inp.atk&&p.atkTimer<=0&&!p.attacking){
     p.attacking=true;p.atkProg=0;p.atkTimer=ATKCD;
-    const near=findNearest(G.lv.enemies,p,TL*1.6);
+    const meleeR=meleeProfile(p).range;
+    const near=findNearest(G.lv.enemies,p,meleeR);
     if(near){
       const ex=near.x-p.x,ey=near.y-p.y,el=Math.hypot(ex,ey);
       if(el>0){p.facing.x=ex/el;p.facing.y=ey/el;}
@@ -3261,8 +3325,8 @@ function updatePlayer(dt){
       doMelee(p,near);
     } else {
       // Check barrels and spawners in melee range before firing a projectile
-      const nearBarrel=(G.lv.barrels||[]).find(b=>b.alive&&dist(p,b)<TL*1.6);
-      const nearSpawner=(G.lv.spawners||[]).find(sp=>sp.alive&&dist(p,sp)<TL*1.6);
+      const nearBarrel=(G.lv.barrels||[]).find(b=>b.alive&&dist(p,b)<meleeR);
+      const nearSpawner=(G.lv.spawners||[]).find(sp=>sp.alive&&dist(p,sp)<meleeR);
       if(nearSpawner){hitSpawner(nearSpawner);lungeToward(p,nearSpawner);spawnP(p.x,p.y,'#d0e8ff',6);}
       else if(nearBarrel){ breakBarrel(nearBarrel); }
       else {
@@ -3319,7 +3383,7 @@ function updatePlayer(dt){
   }
   p._magWasDown=G.inp.mag;
   if(p.magTimer>0)p.magTimer-=dt;
-  if(G.lv.enemies.length>0)p.turbo=Math.min(bp2,p.turbo+dt*.6);
+  if(G.lv.enemies.length>0)p.turbo=Math.min(bp2,p.turbo+dt*.6*(MUT('fortune')?2:1));
   if(G._devMode)p.turbo=bp2;
 
   // Boss trigger — any player can wake the boss
@@ -3491,34 +3555,140 @@ function solid(map,wx,wy){
   });
 }
 
+// Bomb explosion — damages enemies, bosses, barrels in radius. Used by jester bombs.
+// Host-authoritative in MP (clients see visuals only via state broadcast / particles).
+function bombExplode(x,y,r,dmg,col,isTurbo){
+  if(!G.lv)return;
+  // Visuals — always run locally so the caster sees their boom.
+  // Shake dampening: a single bomb should feel impactful, but Caltrops (6 bombs)
+  // and Bombs Away (7 bombs) would otherwise pin the screenshake cap for ~1s.
+  // If shake is already elevated from a recent explosion, contribute much less.
+  addShake(G.shakeT>6?1:3);
+  SFX.atPos(x,y);SFX.boom();
+  G.shockwave={x,y,r:0,maxR:r*1.4,timer:.45,maxTimer:.45,col};
+  for(let i=0;i<22;i++){
+    const a=Math.random()*Math.PI*2,s=120+Math.random()*220;
+    G.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.45+Math.random()*.3,ml:.8,sz:5+Math.random()*7,
+      col:Math.random()<.55?col:(Math.random()<.5?'#ffcc44':'#ffffff')});
+  }
+  // Damage — host authoritative
+  if(MP.enabled&&!MP.isHost)return;
+  (G.lv.enemies||[]).filter(e=>e&&e.alive!==false&&dist(e,{x,y})<r).forEach(e=>{
+    // Falloff: full at center, ~45% at edge (was 30%). Direct hits in the inner
+    // 35% of the radius get a +35% damage bonus to reward good throws and let
+    // the jester reliably one-shot the basic enemies its DPS budget should kill.
+    const d=dist(e,{x,y});
+    let falloff=.45+.55*Math.pow(1-d/r,1.0);
+    if(d<r*0.35)falloff*=1.35;
+    hitEnemy(e,Math.floor(dmg*falloff));
+  });
+  if(G.lv.boss?.active&&dist(G.lv.boss,{x,y})<r+TL*G.lv.boss.sz){
+    const bd=Math.floor(dmg*.35);
+    if(isTurbo)hitBossTurbo(G.lv.boss,bd);else hitBoss(G.lv.boss,bd);
+  }
+  (G.lv.spawners||[]).filter(s=>s.alive&&dist(s,{x,y})<r).forEach(s=>hitSpawner(s));
+  (G.lv.barrels||[]).filter(b=>b.alive&&dist(b,{x,y})<r).forEach(b=>breakBarrel(b));
+}
+
+// Throw a single jester bomb. Used by the primary attack and by both turbo abilities.
+// Bombs have an "arm time" — they pass harmlessly through anything for the first ~150ms,
+// then explode on first contact with an enemy/barrel/spawner/boss. Once the fuse expires
+// or the bomb hits a wall they explode regardless. This preserves the "close range doesn't
+// explode at your feet" feel while still letting ranged throws land ON enemies.
+function throwBomb(p,tx,ty,opts={}){
+  const dx=tx-p.x,dy=ty-p.y,d=Math.hypot(dx,dy)||1;
+  const fuse=opts.fuse??0.7;
+  // Travel speed scales with distance so the bomb always reaches the target around mid-fuse
+  const spd=Math.max(180,Math.min(420,d/fuse*1.05));
+  const radius=opts.r??TL*1.4;
+  const atk=opts.atk??(p.atk*1.5);
+  const armTime=opts.armTime??0.15;
+  G.projs.push({
+    x:p.x+(dx/d)*TL*.4, y:p.y+(dy/d)*TL*.4,
+    vx:(dx/d)*spd, vy:(dy/d)*spd,
+    life:fuse, _initFuse:fuse, _armTime:armTime,
+    col:'#ffcc44', trail:[], isTurbo:false,
+    isLob:true, lobR:radius, lobAtk:atk, lobCol:'#ff8822',
+    _jesterBomb:1, _turboBomb:opts.turbo?1:0, _local:true,
+  });
+}
+
 function fireProj(p){
   const atkCd=p.item==='rapid_fire'?(ATKCD*.45):ATKCD;
   p.atkTimer=atkCd;
-  const dmgMul=p.item==='fury'?1.8:1;
+  // Jester throws bombs instead of arrows. Items still apply:
+  //   • fury → 1.8× bomb damage (matches knight/wizard fury bonus)
+  //   • triple_shot → throws 3 bombs in a spread
+  //   • rapid_fire → already covered above via atkCd
+  if(p.charClass==='jester'){
+    const aim=getAimDir(p);
+    p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
+    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
+    const furyMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
+    const bombAtk=p.atk*1.5*furyMul;
+    if(p.item==='triple_shot'){
+      // Three bombs in a forward spread (~±18°), each individually armed and lobbed.
+      // Bombs travel slightly different distances so they don't all stack on the same tile.
+      const a=Math.atan2(aim.dy,aim.dx);
+      [-0.32,0,0.32].forEach((off,i)=>{
+        const ang=a+off;
+        const range=TL*(3.6+(i===1?0.4:0));
+        throwBomb(p,p.x+Math.cos(ang)*range,p.y+Math.sin(ang)*range,
+          {fuse:0.7,r:TL*1.4,atk:bombAtk});
+      });
+    } else {
+      throwBomb(p,p.x+aim.dx*TL*4,p.y+aim.dy*TL*4,{fuse:0.7,r:TL*1.4,atk:bombAtk});
+    }
+    return;
+  }
+  // Dwarf hurls a heavy hammer when no enemy is in melee range — slow, big, hard-hitting,
+  // shorter range than an arrow. Keeps the dwarf melee-focused but not helpless at distance.
+  if(p.charClass==='dwarf'){
+    const aim=getAimDir(p);
+    const furyMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
+    const hspd=PROJSPD*0.6;
+    p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
+    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
+    G.projs.push({
+      x:p.x+aim.dx*TL*.5,y:p.y+aim.dy*TL*.5,
+      vx:aim.dx*hspd,vy:aim.dy*hspd,
+      life:(PROJRANGE*0.7)/hspd,
+      col:p.item==='fury'?'#ff6622':'#d9a066',trail:[],isTurbo:false,
+      _hammer:1,_spin:0,
+      atk:Math.floor((p.atk*1.6+rand(0,Math.floor(p.atk*.3)))*furyMul),
+    });
+    return;
+  }
+  const dmgMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
   const acc=p.charAccent||'#88aaff';
-  const base={life:PROJRANGE/PROJSPD,col:p.item==='fury'?'#ff6622':acc,trail:[],isTurbo:false};
+  const isWizard=p.charClass==='wizard';
+  // Wizard fires slower, fatter magic bolts that hit harder per shot
+  const projSpd=isWizard?PROJSPD*.82:PROJSPD;
+  const base={life:PROJRANGE/projSpd,col:p.item==='fury'?'#ff6622':acc,trail:[],isTurbo:false,
+    _wizard:isWizard?1:0,_blade:isWizard?0:1,_spin:0};
   // Auto-aim: snap up to 25° toward nearest enemy
   const aim=getAimDir(p);
   const px=p.x+aim.dx*TL*.5,py=p.y+aim.dy*TL*.5;
-  // Trigger weapon swing animation on every shot
   p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
   SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
   if(p.item==='triple_shot'){
     const a=Math.atan2(aim.dy,aim.dx);
     [-0.32,0,0.32].forEach(off=>{
       const ang=a+off;
-      G.projs.push({...base,x:px,y:py,_local:true,vx:Math.cos(ang)*PROJSPD,vy:Math.sin(ang)*PROJSPD,
+      G.projs.push({...base,x:px,y:py,_local:true,vx:Math.cos(ang)*projSpd,vy:Math.sin(ang)*projSpd,
         atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
     });
   } else {
-    G.projs.push({...base,x:px,y:py,_local:true,vx:aim.dx*PROJSPD,vy:aim.dy*PROJSPD,
+    G.projs.push({...base,x:px,y:py,_local:true,vx:aim.dx*projSpd,vy:aim.dy*projSpd,
       atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
   }
-  // Shot sparks
+  // Shot sparks — purple/cyan for wizard, blue for others
+  const sparkCol=isWizard?'#cc88ff':(p.item==='fury'?'#ff8844':'#88ccff');
   for(let i=0;i<5;i++){
     const ang=Math.atan2(aim.dy,aim.dx)+(Math.random()-.5)*1.2;
     G.parts.push({x:p.x+aim.dx*TL*.3,y:p.y+aim.dy*TL*.3,
-      vx:Math.cos(ang)*120,vy:Math.sin(ang)*120,life:.12,ml:.12,sz:2.5,col:p.item==='fury'?'#ff8844':'#88ccff'});
+      vx:Math.cos(ang)*120,vy:Math.sin(ang)*120,life:.12,ml:.12,sz:2.5,col:sparkCol});
   }
 }
 
@@ -3531,11 +3701,28 @@ function findNearest(list,origin,maxDist){
 
 // Melee swing — high damage, auto-targeted. Ghosts are immune.
 // Shared lunge used by melee bashes and spawner hits
+// Melee profile per class — non-melee classes get shorter range, weaker hits, smaller lunge.
+// Ranged-focused classes should rely on projectiles; melee is emergency-only for them.
+function meleeProfile(p){
+  if(p.charClass==='wizard')return {range:TL*1.05,dmgMul:0.45,lungeMul:0.35};
+  if(p.charClass==='jester')return {range:TL*0.95,dmgMul:0.35,lungeMul:0.25};
+  if(p.charClass==='dwarf')return {range:TL*1.75,dmgMul:1.25,lungeMul:0.7}; // heavy hammer: long reach, hard hit, small lunge
+  return {range:TL*1.6,dmgMul:1.0,lungeMul:1.0}; // knight default
+}
+
+// Damage reduction by class. Dwarf is the tank — takes 28% less from everything,
+// on top of its much larger HP pool. Returns the damage actually dealt to the player.
+function dmgToPlayer(pl,raw){
+  const mul=pl&&pl.charClass==='dwarf'?0.88:1;
+  return raw*mul*(MUT('glass')?1.6:1); // GLASS mutator — enemies hit harder too
+}
+
 function lungeToward(p,target){
+  const prof=meleeProfile(p);
   const dx=target.x-p.x,dy=target.y-p.y,dl=Math.hypot(dx,dy);
   if(dl>0){
-    const lx=p.x+(dx/dl)*Math.min(dl*.2,TL*.28);
-    const ly=p.y+(dy/dl)*Math.min(dl*.2,TL*.28);
+    const lx=p.x+(dx/dl)*Math.min(dl*.2,TL*.28)*prof.lungeMul;
+    const ly=p.y+(dy/dl)*Math.min(dl*.2,TL*.28)*prof.lungeMul;
     if(G.lv&&!solid(G.lv.map,lx,p.y))p.x=lx;
     if(G.lv&&!solid(G.lv.map,p.x,ly))p.y=ly;
   }
@@ -3544,8 +3731,9 @@ function lungeToward(p,target){
 function doMelee(p,target){
   if(target.type==='ghost'){spawnP(target.x,target.y,'#8888cc',4);return;}
   if(!hasLOS(p.x,p.y,target.x,target.y)){return;}
-  const furyMul=G.p.item==='fury'?1.8:1;
-  const dmg=Math.floor((p.atk*2.4+rand(0,Math.floor(p.atk*.35)))*furyMul);
+  const prof=meleeProfile(p);
+  const furyMul=(G.p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
+  const dmg=Math.floor((p.atk*2.4*prof.dmgMul+rand(0,Math.floor(p.atk*.35*prof.dmgMul)))*furyMul);
   const willKill=target.hp-dmg<=0;
   hitEnemy(target,dmg);
   SFX.atPos(p.x,p.y);SFX.swing();
@@ -3553,12 +3741,37 @@ function doMelee(p,target){
   G.hitStop=Math.max(G.hitStop,willKill?3:1);
   p.turbo=Math.min(p.turboMax2||200,p.turbo+4);
   const aimAngle=Math.atan2(target.y-p.y,target.x-p.x);
-  G.meleeArc={x:target.x,y:target.y,angle:aimAngle,r:TL*.9,spread:Math.PI*.85,timer:.13,maxTimer:.13};
+  // Dwarf cleaves — its hammer hits every enemy in a wide frontal arc, not just the target.
+  if(p.charClass==='dwarf'){
+    const cleaveR=prof.range*1.05, cleaveArc=Math.PI*0.75; // 135° swing
+    (G.lv?.enemies||[]).forEach(e=>{
+      if(e===target||e.hidden||e.alive===false)return;
+      const ed=dist(p,e);if(ed>cleaveR)return;
+      let diff=Math.atan2(e.y-p.y,e.x-p.x)-aimAngle;
+      while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+      if(Math.abs(diff)>cleaveArc/2)return;
+      if(!hasLOS(p.x,p.y,e.x,e.y))return;
+      hitEnemy(e,dmg);
+      // light knockback on cleaved targets
+      if(e.type!=='golem'){
+        const dx2=e.x-p.x,dy2=e.y-p.y,dl2=Math.hypot(dx2,dy2)||1;
+        const nbx=e.x+(dx2/dl2)*TL*.7,nby=e.y+(dy2/dl2)*TL*.7;
+        if(G.lv&&!solid(G.lv.map,nbx,e.y))e.x=nbx;
+        if(G.lv&&!solid(G.lv.map,e.x,nby))e.y=nby;
+      }
+    });
+  }
+  // Smaller arc for non-melee classes; wider for the dwarf's hammer
+  const arcR=prof.dmgMul<1?TL*.6:(p.charClass==='dwarf'?TL*1.2:TL*.9);
+  const arcSpread=p.charClass==='dwarf'?Math.PI*1.0:Math.PI*.85;
+  G.meleeArc={x:target.x,y:target.y,angle:aimAngle,r:arcR,spread:arcSpread,timer:.14,maxTimer:.14};
   const dx=target.x-p.x,dy=target.y-p.y,dl=Math.hypot(dx,dy);
   if(dl>0){
     lungeToward(p,target);
     if(target.type!=='golem'){  // golems absorb melee hits — no knockback
-      const nbx=target.x+(dx/dl)*TL*.9,nby=target.y+(dy/dl)*TL*.9;
+      // Non-melee classes give weaker push-back; dwarf hits harder
+      const pushDist=TL*(p.charClass==='dwarf'?1.3:.9)*prof.dmgMul;
+      const nbx=target.x+(dx/dl)*pushDist,nby=target.y+(dy/dl)*pushDist;
       if(G.lv&&!solid(G.lv.map,nbx,target.y))target.x=nbx;
       if(G.lv&&!solid(G.lv.map,target.x,nby))target.y=nby;
     }
@@ -3566,12 +3779,16 @@ function doMelee(p,target){
   for(let i=0;i<10;i++){
     const a=aimAngle+(Math.random()-.5)*2.2;
     G.parts.push({x:p.x+p.facing.x*TL*.5,y:p.y+p.facing.y*TL*.5,
-      vx:Math.cos(a)*180,vy:Math.sin(a)*180,life:.14,ml:.14,sz:3.5,col:'#d0e8ff'});
+      vx:Math.cos(a)*180,vy:Math.sin(a)*180,life:.14,ml:.14,sz:3.5,col:p.charClass==='dwarf'?'#ffcc88':'#d0e8ff'});
   }
 }
 
 // Turbo super — forward-piercing lance that passes through walls and one-shots everything
 function doTurboAOE(p){
+  // Class dispatch — Wizard has Frost Nova; Jester has Caltrops; Dwarf has Ground Slam
+  if(p.charClass==='wizard')return doFrostNova(p);
+  if(p.charClass==='jester')return doCaltrops(p);
+  if(p.charClass==='dwarf')return doGroundSlam(p);
   SFX.turboFire();
   // In MP, client sends RPC so host applies damage authoritatively
   if(MP.enabled&&!MP.isHost&&p===G.p){
@@ -3592,16 +3809,291 @@ function doTurboAOE(p){
   toHit.forEach(e=>{
     const dmg=Math.floor(p.atk*4.5);
     hitEnemy(e,dmg);
-    addFT('⚡',e.x,e.y-TL*.5,'#f5c542');
   });
   // Damage boss if in range
   if(G.lv.boss?.active&&dist(p,G.lv.boss)<aoeR+TL*G.lv.boss.sz)
-    hitBoss(G.lv.boss,Math.floor(p.atk*3));
-  // Smash barrels
+    hitBossTurbo(G.lv.boss,Math.floor(p.atk*3));
+  // Break spawners + smash barrels in range
+  (G.lv.spawners||[]).filter(s=>s.alive&&dist(p,s)<aoeR).forEach(s=>hitSpawner(s));
   (G.lv.barrels||[]).filter(b=>b.alive&&dist(p,b)<aoeR).forEach(b=>breakBarrel(b));
 }
 
+// ─── WIZARD ABILITIES ─────────────────────────────────────────────
+// Frost Nova — instant AoE freeze + damage, smaller radius but suspends enemies
+function doFrostNova(p){
+  if(!G.lv)return; // turbo can occasionally fire mid-transition
+  SFX.turboFire();
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'frostNova',x:Math.round(p.x),y:Math.round(p.y),playerId:MP.playerId});
+  }
+  const novaR=TL*3.5;
+  addShake(6);G.hitStop=Math.max(G.hitStop,3);
+  G.shockwave={x:p.x,y:p.y,r:0,maxR:novaR*1.25,timer:.55,maxTimer:.55,col:'#88ddff'};
+  for(let i=0;i<32;i++){
+    const a=i/32*Math.PI*2,s=80+Math.random()*180;
+    G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.6+Math.random()*.4,ml:1.0,sz:3+Math.random()*5,
+      col:Math.random()<.6?'#88ddff':'#ffffff'});
+  }
+  // Damage + freeze all enemies in radius
+  const toHit=(G.lv.enemies||[]).filter(e=>e&&e.alive!==false&&dist(p,e)<novaR);
+  toHit.forEach(e=>{
+    const dmg=Math.floor(p.atk*2.8);
+    hitEnemy(e,dmg);
+    if(e.alive!==false)e.frozen=1.8;
+  });
+  if(G.lv.boss?.active&&dist(p,G.lv.boss)<novaR+TL*G.lv.boss.sz)
+    hitBossTurbo(G.lv.boss,Math.floor(p.atk*2.2));
+  (G.lv.spawners||[]).filter(s=>s.alive&&dist(p,s)<novaR).forEach(s=>hitSpawner(s));
+  (G.lv.barrels||[]).filter(b=>b.alive&&dist(p,b)<novaR).forEach(b=>breakBarrel(b));
+}
+
+// Meteor — channeled AoE strike at mouse/facing target, big damage delayed by 0.5s
+function doMeteor(p){
+  if(!G.lv)return;
+  SFX.turboFire();
+  // Resolve target direction (same logic as knight's lance)
+  let tx=p.facing?.x||1,ty=p.facing?.y||0;
+  if(MODE==='level'||MODE==='boss'){
+    if(G.aimJoy?.active){
+      const ajx=G.aimJoy.cx-G.aimJoy.ox,ajy=G.aimJoy.cy-G.aimJoy.oy,ajl=Math.hypot(ajx,ajy);
+      if(ajl>12){tx=ajx/ajl;ty=ajy/ajl;}
+    } else {
+      const _ps=worldToScreen(p.x,p.y),spx=_ps.x,spy=_ps.y;
+      const mdx=mousePos.x-spx,mdy=mousePos.y-spy,ml=Math.hypot(mdx,mdy);
+      if(ml>20){tx=mdx/ml;ty=mdy/ml;}
+    }
+  }
+  if(!isFinite(tx)||!isFinite(ty)){tx=1;ty=0;}
+  const mx=p.x+tx*TL*5,my=p.y+ty*TL*5;
+  // Snapshot the wizard's attack power now — the player might pick something up
+  // between cast and impact, but we want the damage to reflect cast-time stats
+  const atkSnap=p.atk||18;
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'meteor',x:Math.round(mx),y:Math.round(my),playerId:MP.playerId});
+  }
+  // Visual telegraph — red ground marker that pulses for 0.5s before impact.
+  // _meteor flag suppresses hazard creation; damage is handled by the setTimeout below.
+  if(!G.lv.warnings)G.lv.warnings=[];
+  G.lv.warnings.push({x:mx,y:my,timer:.5,maxTimer:.5,r:TL*4,hazardR:0,col:'#ff4422',
+    atk:0,hazardDur:0,_meteor:true});
+  setTimeout(()=>{
+    try{
+      if(!G.lv)return; // level changed; abort
+      const blastR=TL*4.0;
+      (G.lv.enemies||[]).filter(e=>e&&e.alive!==false&&dist(e,{x:mx,y:my})<blastR).forEach(e=>{
+        hitEnemy(e,Math.floor(atkSnap*5.5));
+      });
+      if(G.lv.boss?.active&&dist(G.lv.boss,{x:mx,y:my})<blastR+TL*G.lv.boss.sz)
+        hitBossTurbo(G.lv.boss,Math.floor(atkSnap*4.2));
+      (G.lv.spawners||[]).filter(s=>s.alive&&dist(s,{x:mx,y:my})<blastR).forEach(s=>hitSpawner(s));
+      (G.lv.barrels||[]).filter(b=>b.alive&&dist(b,{x:mx,y:my})<blastR).forEach(b=>breakBarrel(b));
+      addShake(22);G.hitStop=8;
+      SFX.atPos(mx,my);SFX.boom();
+      G.shockwave={x:mx,y:my,r:0,maxR:blastR*1.4,timer:.65,maxTimer:.65,col:'#ff6622'};
+      for(let i=0;i<40;i++){
+        const a=Math.random()*Math.PI*2,s=120+Math.random()*280;
+        G.parts.push({x:mx,y:my,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+          life:.6+Math.random()*.4,ml:1.0,sz:5+Math.random()*8,
+          col:Math.random()<.5?'#ff4422':(Math.random()<.5?'#ffcc44':'#ffffff')});
+      }
+    }catch(err){console.error('Meteor impact failed:',err);}
+  },500);
+}
+
+// ─── JESTER ABILITIES ─────────────────────────────────────────────
+// Caltrops — drop a ring of 6 small bombs around the player. Quick panic-button
+// area denial. Each bomb has its own fuse so the ring detonates in a wave.
+function doCaltrops(p){
+  if(!G.lv)return;
+  SFX.turboFire();
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'caltrops',x:Math.round(p.x),y:Math.round(p.y),playerId:MP.playerId});
+  }
+  addShake(4);
+  // Yellow flourish around player
+  for(let i=0;i<14;i++){
+    const a=i/14*Math.PI*2,s=80+Math.random()*120;
+    G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.3+Math.random()*.2,ml:.5,sz:3+Math.random()*4,
+      col:Math.random()<.5?'#ffcc44':'#ffffff'});
+  }
+  const ringR=TL*1.7;
+  const count=6;
+  for(let i=0;i<count;i++){
+    const a=i/count*Math.PI*2+(Math.random()-.5)*0.3;
+    const bx=p.x+Math.cos(a)*ringR,by=p.y+Math.sin(a)*ringR;
+    G.projs.push({
+      x:p.x,y:p.y,
+      vx:Math.cos(a)*ringR/0.35,vy:Math.sin(a)*ringR/0.35, // reach ring in 0.35s
+      life:0.45+i*0.06+Math.random()*0.08, // staggered fuses for wave detonation
+      col:'#ffcc44',trail:[],isTurbo:false,
+      isLob:true, lobR:TL*1.5, lobAtk:Math.floor(p.atk*1.3), lobCol:'#ff8822',
+      _jesterBomb:1, _turboBomb:1, _local:true,
+    });
+  }
+}
+
+// Bombs Away — directed cluster volley. 7 bombs thrown in a narrow forward cone
+// land in a tight cluster ~4 tiles ahead, with staggered fuses so they detonate
+// in a wave. Works in hallways (narrow spread), works in open rooms (cluster
+// covers ~3 tiles wide), and doesn't require the jester to be in the middle of
+// the enemies — it's a directed ranged attack.
+function doBombsAway(p){
+  if(!G.lv)return;
+  SFX.turboFire();
+  // Aim direction
+  let tx=p.facing?.x||1,ty=p.facing?.y||0;
+  if(MODE==='level'||MODE==='boss'){
+    if(G.aimJoy?.active){
+      const ajx=G.aimJoy.cx-G.aimJoy.ox,ajy=G.aimJoy.cy-G.aimJoy.oy,ajl=Math.hypot(ajx,ajy);
+      if(ajl>12){tx=ajx/ajl;ty=ajy/ajl;}
+    } else {
+      const _ps=worldToScreen(p.x,p.y),spx=_ps.x,spy=_ps.y;
+      const mdx=mousePos.x-spx,mdy=mousePos.y-spy,ml=Math.hypot(mdx,mdy);
+      if(ml>20){tx=mdx/ml;ty=mdy/ml;}
+    }
+  }
+  if(!isFinite(tx)||!isFinite(ty)){tx=1;ty=0;}
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'bombsAway',fx:tx,fy:ty,playerId:MP.playerId});
+  }
+  addShake(8);G.hitStop=Math.max(G.hitStop,3);
+  // Big launch flourish at player
+  for(let i=0;i<22;i++){
+    const a=Math.random()*Math.PI*2,s=120+Math.random()*200;
+    G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.4+Math.random()*.25,ml:.65,sz:4+Math.random()*6,
+      col:Math.random()<.5?'#ffcc44':'#ff8822'});
+  }
+  // 7 bombs in a tight forward cluster — small angle jitter, ranges 3.5–5.5 tiles,
+  // staggered fuses so the cluster detonates in a wave instead of all at once.
+  const baseAng=Math.atan2(ty,tx);
+  const count=7;
+  const angJitter=0.22; // ~±12° from aim direction
+  for(let i=0;i<count;i++){
+    const ang=baseAng+(Math.random()-.5)*angJitter*2;
+    const range=TL*(3.5+Math.random()*2); // 3.5–5.5 tiles forward
+    const bx=p.x+Math.cos(ang)*range,by=p.y+Math.sin(ang)*range;
+    const fuse=0.4+Math.random()*0.5;
+    throwBomb(p,bx,by,{fuse,r:TL*1.7,atk:p.atk*1.4,turbo:true});
+  }
+}
+
+// ─── DWARF ABILITIES ──────────────────────────────────────────────
+// Ground Slam — radial shockwave around the dwarf: heavy damage + strong knockback.
+// Clears everything immediately around you (peel + group wipe). Quick-tap turbo.
+function doGroundSlam(p){
+  if(!G.lv)return;
+  SFX.turboFire();
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'groundSlam',x:Math.round(p.x),y:Math.round(p.y),playerId:MP.playerId});
+  }
+  const slamR=TL*4.2;
+  addShake(12);G.hitStop=Math.max(G.hitStop,5);
+  G.shockwave={x:p.x,y:p.y,r:0,maxR:slamR*1.2,timer:.5,maxTimer:.5,col:'#d9a066'};
+  // Dust burst
+  for(let i=0;i<30;i++){
+    const a=i/30*Math.PI*2,s=140+Math.random()*220;
+    G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.5+Math.random()*.35,ml:.85,sz:5+Math.random()*7,
+      col:Math.random()<.55?'#c89a5a':(Math.random()<.5?'#8a6a3a':'#e8d0a0')});
+  }
+  // Damage + heavy knockback all enemies in radius
+  (G.lv.enemies||[]).filter(e=>e&&e.alive!==false&&dist(p,e)<slamR).forEach(e=>{
+    hitEnemy(e,Math.floor(p.atk*4.2));
+    if(e.type!=='golem'){
+      const dx=e.x-p.x,dy=e.y-p.y,dl=Math.hypot(dx,dy)||1;
+      e.staggerVx=(dx/dl)*420;e.staggerVy=(dy/dl)*420;
+      e.stagger=.4;e.staggerDur=.4;e.staggerSkipAI=true;e.staggerDir=Math.atan2(dy,dx);
+    }
+  });
+  if(G.lv.boss?.active&&dist(p,G.lv.boss)<slamR+TL*G.lv.boss.sz)
+    hitBossTurbo(G.lv.boss,Math.floor(p.atk*3.5));
+  (G.lv.spawners||[]).filter(s=>s.alive&&dist(p,s)<slamR).forEach(s=>hitSpawner(s));
+  (G.lv.barrels||[]).filter(b=>b.alive&&dist(p,b)<slamR).forEach(b=>breakBarrel(b));
+}
+
+// Bull Rush — the dwarf charges forward, plowing through everything in the path with
+// i-frames, damaging + knocking aside all enemies, then slams down at the end.
+// Group wipe in a line + repositioning + survivability. Full-charge turbo.
+function doBullRush(p){
+  if(!G.lv)return;
+  SFX.turboFire();
+  // Aim direction
+  let tx=p.facing?.x||1,ty=p.facing?.y||0;
+  if(MODE==='level'||MODE==='boss'){
+    if(G.aimJoy?.active){
+      const ajx=G.aimJoy.cx-G.aimJoy.ox,ajy=G.aimJoy.cy-G.aimJoy.oy,ajl=Math.hypot(ajx,ajy);
+      if(ajl>12){tx=ajx/ajl;ty=ajy/ajl;}
+    } else {
+      const _ps=worldToScreen(p.x,p.y),spx=_ps.x,spy=_ps.y;
+      const mdx=mousePos.x-spx,mdy=mousePos.y-spy,ml=Math.hypot(mdx,mdy);
+      if(ml>20){tx=mdx/ml;ty=mdy/ml;}
+    }
+  }
+  if(!isFinite(tx)||!isFinite(ty)){tx=1;ty=0;}
+  if(MP.enabled&&!MP.isHost&&p===G.p){
+    mpSend({type:'bullRush',fx:tx,fy:ty,playerId:MP.playerId});
+  }
+  // Raycast forward up to TL*6, stopping before a wall
+  const maxDist=TL*6;
+  let travel=maxDist;
+  for(let d=TL*.5;d<=maxDist;d+=TL*.4){
+    if(solid(G.lv.map,p.x+tx*d,p.y+ty*d)){travel=Math.max(0,d-TL*.6);break;}
+  }
+  const startX=p.x,startY=p.y;
+  const endX=p.x+tx*travel,endY=p.y+ty*travel;
+  // Damage + knock aside every enemy within a thick corridor along the path
+  const halfW=TL*1.3;
+  (G.lv.enemies||[]).forEach(e=>{
+    if(!e||e.alive===false||e.hidden)return;
+    // distance from enemy to the rush segment
+    const vx=endX-startX,vy=endY-startY,len2=vx*vx+vy*vy||1;
+    let t=((e.x-startX)*vx+(e.y-startY)*vy)/len2;t=Math.max(0,Math.min(1,t));
+    const cxp=startX+vx*t,cyp=startY+vy*t;
+    if(dist(e,{x:cxp,y:cyp})>halfW+TL*(e.sz||.5))return;
+    hitEnemy(e,Math.floor(p.atk*4.5));
+    if(e.type!=='golem'){
+      const dx=e.x-cxp,dy=e.y-cyp,dl=Math.hypot(dx,dy)||1;
+      e.staggerVx=(dx/dl)*460;e.staggerVy=(dy/dl)*460;
+      e.stagger=.4;e.staggerDur=.4;e.staggerSkipAI=true;e.staggerDir=Math.atan2(dy,dx);
+    }
+  });
+  // Boss / spawners / barrels along the path
+  if(G.lv.boss?.active){
+    const vx=endX-startX,vy=endY-startY,len2=vx*vx+vy*vy||1;
+    let t=((G.lv.boss.x-startX)*vx+(G.lv.boss.y-startY)*vy)/len2;t=Math.max(0,Math.min(1,t));
+    if(dist(G.lv.boss,{x:startX+vx*t,y:startY+vy*t})<halfW+TL*G.lv.boss.sz)
+      hitBossTurbo(G.lv.boss,Math.floor(p.atk*4));
+  }
+  (G.lv.spawners||[]).forEach(s=>{if(s.alive&&dist(s,{x:endX,y:endY})<halfW*1.5)hitSpawner(s);});
+  (G.lv.barrels||[]).forEach(b=>{if(b.alive&&dist(b,{x:endX,y:endY})<halfW*1.5)breakBarrel(b);});
+  // Move the dwarf to the end of the rush, grant brief i-frames
+  p.x=endX;p.y=endY;
+  p.invuln=Math.max(p.invuln,0.6);
+  p.kbVx=tx*120;p.kbVy=ty*120;p.kbTimer=.12; // little slide at the end
+  addShake(14);G.hitStop=Math.max(G.hitStop,6);
+  SFX.atPos(endX,endY);SFX.boom();
+  // Dust trail along the path
+  const steps=Math.max(4,Math.floor(travel/TL));
+  for(let i=0;i<=steps;i++){
+    const fx=startX+tx*travel*(i/steps),fy=startY+ty*travel*(i/steps);
+    for(let j=0;j<3;j++){
+      const a=Math.random()*Math.PI*2,s=40+Math.random()*120;
+      G.parts.push({x:fx,y:fy,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+        life:.35+Math.random()*.3,ml:.6,sz:4+Math.random()*6,col:Math.random()<.5?'#c89a5a':'#8a6a3a'});
+    }
+  }
+  // Slam shockwave at the end
+  G.shockwave={x:endX,y:endY,r:0,maxR:TL*3.5,timer:.45,maxTimer:.45,col:'#d9a066'};
+}
+
 function doTurbo(p){
+  // Class dispatch — Wizard has Meteor; Jester has Bombs Away; Dwarf has Bull Rush
+  if(p.charClass==='wizard')return doMeteor(p);
+  if(p.charClass==='jester')return doBombsAway(p);
+  if(p.charClass==='dwarf')return doBullRush(p);
   SFX.turboFire();
   let tx=p.facing.x,ty=p.facing.y;
   if(MODE==='level'||MODE==='boss'){
@@ -3609,7 +4101,7 @@ function doTurbo(p){
       const ajx=G.aimJoy.cx-G.aimJoy.ox,ajy=G.aimJoy.cy-G.aimJoy.oy,ajl=Math.hypot(ajx,ajy);
       if(ajl>12){tx=ajx/ajl;ty=ajy/ajl;}
     } else {
-      const spx=p.x-G.cam.x,spy=p.y-G.cam.y;
+      const _ps=worldToScreen(p.x,p.y),spx=_ps.x,spy=_ps.y;
       const mdx=mousePos.x-spx,mdy=mousePos.y-spy,ml=Math.hypot(mdx,mdy);
       if(ml>20){tx=mdx/ml;ty=mdy/ml;}
     }
@@ -3662,7 +4154,8 @@ function updateProjs(dt){
     if(pr.trail.length>(pr.isTurbo?22:6))pr.trail.pop();
     pr.x+=pr.vx*dt;pr.y+=pr.vy*dt;pr.life-=dt;
     if(pr.life<=0){
-      if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
+      if(pr._jesterBomb)bombExplode(pr.x,pr.y,pr.lobR||TL*1.6,pr.lobAtk||20,pr.lobCol||'#ff8822',pr._turboBomb);
+      else if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
       if(pr.isTurbo){
         // Terminal explosion where lance dies — use the projectile's own colour, not host's
         const accentCol=pr.lobCol||pr.col||(G.p?.charAccent||'#f5c542');
@@ -3711,7 +4204,7 @@ function updateProjs(dt){
       (G.lv.barrels||[]).filter(b=>b.alive&&dist(pr,b)<TL*.85).forEach(b=>breakBarrel(b));
       // One-shot boss if active
       if(G.lv.boss?.active&&dist(pr,G.lv.boss)<TL*G.lv.boss.sz){
-        hitBoss(G.lv.boss,99999);
+        hitBossTurbo(G.lv.boss,99999);
       }
       }
       return true; // lance keeps going — no wall or enemy stops it
@@ -3721,12 +4214,14 @@ function updateProjs(dt){
     if(!isFinite(pr.x)||!isFinite(pr.y)){return false;} // discard NaN-position projectile
     const tx=Math.floor(pr.x/TL),ty=Math.floor(pr.y/TL);
     if(tx<0||ty<0||tx>=MW||ty>=MH){
-      if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
+      if(pr._jesterBomb)bombExplode(pr.x,pr.y,pr.lobR||TL*1.6,pr.lobAtk||20,pr.lobCol||'#ff8822',pr._turboBomb);
+      else if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
       spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
     }
     const t=G.lv.map[ty]?.[tx];
     if(t===TWALL||t===TDOOR){
-      if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
+      if(pr._jesterBomb)bombExplode(pr.x,pr.y,pr.lobR||TL*1.6,pr.lobAtk||20,pr.lobCol||'#ff8822',pr._turboBomb);
+      else if(pr.isLob)createHazard(pr.x,pr.y,pr.lobCol||pr.col,pr.lobAtk||pr.atk,pr.lobR);
       spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
     }
     // Boss/enemy projectile hits ANY player in range
@@ -3735,11 +4230,12 @@ function updateProjs(dt){
       eachPlayer(pl=>{
         if(hit||pl.invuln>0||dist(pr,pl)>=TL*.5)return;
         hit=true;
-        pl.hp-=pr.atk;pl.invuln=.65;
+        const _pd=Math.floor(dmgToPlayer(pl,pr.atk));
+        pl.hp-=_pd;pl.invuln=.65;
         if(pl===G.p){
           addShake(4);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.55);G.hitStop=2;
         }
-        addFT('-'+Math.floor(pr.atk),pl.x,pl.y-20,'#ff4444');spawnP(pl.x,pl.y,'#cc2222',5);
+        addFT('-'+_pd,pl.x,pl.y-20,'#ff4444');spawnP(pl.x,pl.y,'#cc2222',5);
         if(pl.hp<=0)onDeath(pl);
       });
       if(hit){spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
@@ -3750,6 +4246,28 @@ function updateProjs(dt){
         const ri=MP.remoteInputs?.[pr._remoteId];
         return ri?G.players[ri.playerIdx]:null;
       })():p;
+      // Jester bombs have arm time. Unarmed: pass through everything so close-range
+      // throws don't blow up at the jester's feet. Armed: explode on first contact
+      // so distant throws land ON enemies instead of past them.
+      if(pr._jesterBomb){
+        const armed=(pr._initFuse-pr.life)>=(pr._armTime||0.15);
+        if(!armed)return true;
+        const detonate=()=>{
+          bombExplode(pr.x,pr.y,pr.lobR||TL*1.6,pr.lobAtk||20,pr.lobCol||'#ff8822',pr._turboBomb);
+          return false;
+        };
+        for(const e of G.lv.enemies){
+          if(e.alive!==false&&dist(pr,e)<TL*.55)return detonate();
+        }
+        if(G.lv.boss?.active&&dist(pr,G.lv.boss)<TL*G.lv.boss.sz*.85)return detonate();
+        for(const sp of G.lv.spawners||[]){
+          if(sp.alive&&dist(pr,sp)<TL*.72)return detonate();
+        }
+        for(const b of G.lv.barrels||[]){
+          if(b.alive&&dist(pr,b)<TL*.55)return detonate();
+        }
+        return true;
+      }
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){
           hitEnemy(e,pr.atk);
@@ -3769,7 +4287,9 @@ function updateProjs(dt){
         if(b.alive&&dist(pr,b)<TL*.5){breakBarrel(b);spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
       }
     } else if(!pr.isBoss&&MP.enabled&&!MP.isHost){
-      // Client: still destroy proj on wall/enemy contact visually but no damage
+      // Client: still destroy proj on wall/enemy contact visually but no damage.
+      // Jester bombs pass through here too — they live until fuse expiry or wall.
+      if(pr._jesterBomb){return true;}
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
       }
@@ -3852,6 +4372,7 @@ function updateSpawners(dt){
       for(let i=0;i<burst;i++){
         const a=Math.random()*Math.PI*2;
         const grunt=mkGrunt(sp.realm,isHeavy,(sp.x+Math.cos(a)*TL*.9),(sp.y+Math.sin(a)*TL*.9),sp);
+        if(MUT('bounty')){grunt.maxHp=Math.ceil(grunt.maxHp*1.3);grunt.hp=grunt.maxHp;} // tougher guards
         sp.activeGrunts++;
         G.lv.enemies.push(grunt);
       }
@@ -3997,7 +4518,7 @@ function updateWarnings(dt){
   G.lv.warnings=G.lv.warnings.filter(w=>{
     w.timer-=dt;
     if(w.timer<=0){
-      createHazard(w.x,w.y,w.col,w.atk,w.hazardR);
+      if(!w._meteor)createHazard(w.x,w.y,w.col,w.atk,w.hazardR);
       spawnP(w.x,w.y,w.col,12);addShake(4);
       return false;
     }
@@ -4268,7 +4789,7 @@ function mpHandleMessage(d){
       switches:(d.sw||[]).map(a=>({x:a[0],y:a[1],did:a[2],hit:!!a[3],ph:Math.random()*Math.PI*2})),
       doors:(d.drs||[]).map(a=>({x:a[0],y:a[1],id:a[2],open:!!a[3]})),
       boss:null,bossPortal:null,bossPortalTimer:0,
-      lichTether:null,ffTx:0,ffTy:0};
+      lichTether:null,ffTx:0,ffTy:0,mutator:d.mut||null};
     G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
     const off=SPAWN_OFFSETS[MP.localPlayerIdx]||{x:0,y:0};
     G.p.x=ps.x+off.x;G.p.y=ps.y+off.y;
@@ -4282,6 +4803,7 @@ function mpHandleMessage(d){
     } else {
       showRLabel(realm.name+(d.ln>0?' — Level '+(d.ln+1):' — Level 1'));
     }
+    if(G.lv.mutator)setTimeout(announceMutator,900);
     MP._levelReqT=0;
     showMsg('LOADED — MODE='+MODE);
     }catch(e){showMsg('Sync error: '+e.message);}
@@ -4320,6 +4842,114 @@ function mpHandleMessage(d){
           if(typeof d.x==='number')rp.x=d.x;
           if(typeof d.y==='number')rp.y=d.y;
           doTurboAOE(rp);
+        }
+      }
+      return;
+    }
+    if(d.type==='frostNova'){
+      // Wizard client fired Frost Nova — host applies damage + freeze
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          if(typeof d.x==='number')rp.x=d.x;
+          if(typeof d.y==='number')rp.y=d.y;
+          doFrostNova(rp);
+        }
+      }
+      return;
+    }
+    if(d.type==='meteor'){
+      // Wizard client fired Meteor — host triggers at remote player's reported landing point
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp&&typeof d.x==='number'&&typeof d.y==='number'){
+          // Run meteor at the reported landing point. Set rp.facing to point at it so
+          // doMeteor's direction resolution lands at the correct tile.
+          const fdx=d.x-rp.x,fdy=d.y-rp.y,fl=Math.hypot(fdx,fdy)||1;
+          rp.facing={x:fdx/fl,y:fdy/fl};
+          // Override target: instead of recomputing, we directly inject the landing point.
+          // Easier: push the warning + schedule damage directly.
+          if(!G.lv.warnings)G.lv.warnings=[];
+          G.lv.warnings.push({x:d.x,y:d.y,timer:.5,maxTimer:.5,r:TL*4,hazardR:0,col:'#ff4422',
+            atk:0,hazardDur:0,_meteor:true,_owner:rp});
+          setTimeout(()=>{
+            if(!G.lv)return;
+            const blastR=TL*4.0,mx=d.x,my=d.y;
+            G.lv.enemies.filter(e=>dist(e,{x:mx,y:my})<blastR&&e.alive!==false).forEach(e=>{
+              hitEnemy(e,Math.floor(rp.atk*5.5));
+                  });
+            if(G.lv.boss?.active&&dist(G.lv.boss,{x:mx,y:my})<blastR+TL*G.lv.boss.sz)
+              hitBossTurbo(G.lv.boss,Math.floor(rp.atk*4.2));
+            (G.lv.spawners||[]).filter(s=>s.alive&&dist(s,{x:mx,y:my})<blastR).forEach(s=>hitSpawner(s));
+            (G.lv.barrels||[]).filter(b=>b.alive&&dist(b,{x:mx,y:my})<blastR).forEach(b=>breakBarrel(b));
+            addShake(22);G.hitStop=8;
+            SFX.atPos(mx,my);SFX.boom();
+            G.shockwave={x:mx,y:my,r:0,maxR:blastR*1.4,timer:.65,maxTimer:.65,col:'#ff6622'};
+            for(let i=0;i<40;i++){
+              const a=Math.random()*Math.PI*2,s=120+Math.random()*280;
+              G.parts.push({x:mx,y:my,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+                life:.6+Math.random()*.4,ml:1.0,sz:5+Math.random()*8,
+                col:Math.random()<.5?'#ff4422':(Math.random()<.5?'#ffcc44':'#ffffff')});
+            }
+          },500);
+        }
+      }
+      return;
+    }
+    if(d.type==='caltrops'){
+      // Jester client triggered Caltrops — host re-syncs rp position and runs locally
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          if(typeof d.x==='number')rp.x=d.x;
+          if(typeof d.y==='number')rp.y=d.y;
+          doCaltrops(rp);
+        }
+      }
+      return;
+    }
+    if(d.type==='bombsAway'){
+      // Jester client triggered Bombs Away — host applies bomb fan from rp's reported aim dir
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          // Override facing to client's aim so doBombsAway resolves to the correct direction
+          if(typeof d.fx==='number'&&typeof d.fy==='number'){
+            rp.facing={x:d.fx,y:d.fy};
+          }
+          doBombsAway(rp);
+        }
+      }
+      return;
+    }
+    if(d.type==='groundSlam'){
+      // Dwarf client triggered Ground Slam — host re-syncs position and runs locally
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          if(typeof d.x==='number')rp.x=d.x;
+          if(typeof d.y==='number')rp.y=d.y;
+          doGroundSlam(rp);
+        }
+      }
+      return;
+    }
+    if(d.type==='bullRush'){
+      // Dwarf client triggered Bull Rush — host runs it from rp's reported aim direction.
+      // doBullRush moves the player; host is authoritative over rp's new position.
+      const ri=MP.remoteInputs?.[d.playerId];
+      if(ri){
+        const rp=G.players[ri.playerIdx];
+        if(rp){
+          if(typeof d.fx==='number'&&typeof d.fy==='number'){
+            rp.facing={x:d.fx,y:d.fy};
+          }
+          doBullRush(rp);
         }
       }
       return;
@@ -4480,6 +5110,10 @@ function mpSendInput(){
       col:pr.col,sz:pr.sz||4,atk:pr.atk||G.p.atk||18,
       isTurbo:!!pr.isTurbo,isLob:!!pr.isLob,
       lobR:pr.lobR,lobCol:pr.lobCol,lobAtk:pr.lobAtk,
+      _wizard:pr._wizard||0,
+      _jesterBomb:pr._jesterBomb||0,
+      _hammer:pr._hammer||0,
+      _blade:pr._blade||0,
     })),
   });
   MP._wasMouseBtn=mouseBtn;
@@ -4563,8 +5197,13 @@ function mpBroadcastState(){
       vx:Math.round(pr.vx||0),vy:Math.round(pr.vy||0),
       col:pr.col,sz:pr.sz||4,
       owner:pr._remoteId||MP.playerId,
+      _wizard:pr._wizard||0,
+      _jesterBomb:pr._jesterBomb||0,
+      _hammer:pr._hammer||0,
+      _blade:pr._blade||0,
+      isLob:!!pr.isLob,lobR:pr.lobR,lobCol:pr.lobCol,
     })),
-    enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,out:e.out,sz:e.sz,type:e.type,h:e.hidden?1:0}):null),
+    enemies:(G.lv?.enemies||[]).map(e=>e?({id:e.eid,x:Math.round(e.x),y:Math.round(e.y),hp:e.hp,alive:e.alive===false?0:1,hf:e.hitFlash>0?1:0,col:e.col,out:e.out,sz:e.sz,type:e.type,h:e.hidden?1:0,fz:e.frozen>0?1:0}):null),
     items:(G.lv?.items||[]).filter(it=>!it.hidden).map(it=>[it.type,Math.round(it.x),Math.round(it.y),it.val||0,it.id||it.realm||0]),
     spawners:(G.lv?.spawners||[]).map(s=>s?[s.hp,s.alive===false?0:1,s.activeGrunts||0,s.activated?1:0]:null),
     barrels:(G.lv?.barrels||[]).map(b=>b.alive?1:0),
@@ -4814,6 +5453,7 @@ function mpApplyState(data){
       if(!e)return;
       e.x=lerp(e.x,es.x,.25);e.y=lerp(e.y,es.y,.25);
       e.hp=es.hp;e.alive=!!es.alive;e.hidden=!!es.h;
+      e.frozen=es.fz?1.8:0; // host-authoritative freeze indicator (visual)
       if(es.hf&&!e._wasHitFlash)SFX.hit(false);
       e._wasHitFlash=!!es.hf;
       e.hitFlash=es.hf?.12:0;
@@ -5168,7 +5808,7 @@ function mpSendCurrentLevel(){
   // Compact arrays instead of objects to minimize JSON size
   const sp=G.lv.stairsPos;
   const payload={type:'syncLevel',
-    rid:realm.id,ln:G.curLvNum,bs:G.lv.isBoss?1:0,
+    rid:realm.id,ln:G.curLvNum,bs:G.lv.isBoss?1:0,mut:G.lv.mutator||'',
     m:G.lv.map.flat().join(''),
     ps:[G.lv.playerStart.x,G.lv.playerStart.y],
     sp:sp?[sp.x,sp.y]:null,
@@ -5252,6 +5892,12 @@ function updateEnemies(dt){
       e.staggerVx*=Math.pow(.001,dt);e.staggerVy*=Math.pow(.001,dt);
       if(e.staggerSkipAI!==false)return; // lights/mediums pause AI; tanks keep marching
     }
+    // Frozen — Wizard's Frost Nova suspends AI and movement
+    if(e.frozen>0){
+      e.frozen-=dt;
+      e.vx*=Math.pow(.001,dt);e.vy*=Math.pow(.001,dt);
+      return;
+    }
     const d=dist(p,e);
     const ddx=(p.x-e.x)/(d||1),ddy=(p.y-e.y)/(d||1);
     // Flow field movement — steers toward next tile on shortest path, avoiding walls
@@ -5271,11 +5917,13 @@ function updateEnemies(dt){
 
     // STATE TRANSITION
     if(e.state==='idle'){
-      const alertR=e.type==='suicide_bomber'?(playerInCorridor(p)?EALERT*1.8:EALERT*.8):EALERT;
+      // DARKNESS mutator cuts enemy detection range — you're blind, but so are they
+      const darkMul=MUT('dark')?0.5:1;
+      const alertR=(e.type==='suicide_bomber'?(playerInCorridor(p)?EALERT*1.8:EALERT*.8):EALERT)*darkMul;
       if(d<alertR)e.state='chase';
       e.vx=lerp(e.vx,0,3*dt);e.vy=lerp(e.vy,0,3*dt);
     } else {
-      if(d>EALERT*1.6&&e.type!=='golem')e.state='idle';
+      if(d>EALERT*(MUT('dark')?1.1:1.6)&&e.type!=='golem')e.state='idle';
 
       // ── ARCHER: kite, fire arrows. Elite: 3-way volley ──
       if(e.type==='archer'){
@@ -5334,12 +5982,11 @@ function updateEnemies(dt){
           e.atkTimer-=dt;
           if(e.atkTimer<=0&&d<TL*1.4&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
             e.atkTimer=EACD*1.2;
-            p.hp-=e.atk;p.invuln=.9;
+            {const _gd=Math.floor(dmgToPlayer(p,e.atk));p.hp-=_gd;p.invuln=.9;
             if(p===G.p){addShake(7);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.85);}
-            // Knockback — give player a velocity burst away from golem
             const kbSpd=320;
             p.kbVx=ddx*kbSpd;p.kbVy=ddy*kbSpd;p.kbTimer=.18;
-            addFT('-'+e.atk,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',8);
+            addFT('-'+_gd,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',8);}
             if(p.hp<=0)onDeath(p);
           }
         }
@@ -5351,7 +5998,7 @@ function updateEnemies(dt){
           for(let i=0;i<10;i++){const a=i/10*Math.PI*2;
             G.parts.push({x:e.x,y:e.y,vx:Math.cos(a)*100,vy:Math.sin(a)*100,life:.55,ml:.55,sz:9,col:'#887766'});}
           if(d<TL*3.2&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
-            const dmg=Math.floor(e.atk*.55);p.hp-=dmg;p.invuln=.5;
+            const dmg=Math.floor(dmgToPlayer(p,e.atk*.55));p.hp-=dmg;p.invuln=.5;
             if(p===G.p){addShake(6);SFX.playerHurt();}
             addFT('STOMP! -'+dmg,p.x,p.y-20,'#ff6600');if(p.hp<=0)onDeath(p);
           }
@@ -5394,13 +6041,13 @@ function updateEnemies(dt){
           if(d<EATR&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
             e.lunging=false;e.lungeT=0;
             e.atkTimer=effATKCD;
-            p.hp-=e.atk;p.invuln=isHeavy?.75:.6;
+            {const _ld=Math.floor(dmgToPlayer(p,e.atk));p.hp-=_ld;p.invuln=isHeavy?.75:.6;
             const kbAng=Math.atan2(p.y-e.y,p.x-e.x);
             p.kbVx=Math.cos(kbAng)*(isHeavy?220:150);
             p.kbVy=Math.sin(kbAng)*(isHeavy?220:150);
             p.kbTimer=.22;
             if(p===G.p){addShake(isHeavy?6:3);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.65);}
-            addFT('-'+e.atk,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);
+            addFT('-'+_ld,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);}
             if(p.hp<=0)onDeath(p);
           }
           if(e.lungeT<=0){e.lunging=false;e.atkTimer=effATKCD*.5;}
@@ -5468,7 +6115,7 @@ function explodeSuicideBomber(e){
     const dp=dist(pl,e);
     if(dp>=blastR||!hasLOS(e.x,e.y,pl.x,pl.y))return;
     const falloff=0.15+0.85*Math.pow(1-dp/blastR,1.2);
-    const dmg=Math.floor(e.atk*1.3*falloff);
+    const dmg=Math.floor(dmgToPlayer(pl,e.atk*1.3*falloff));
     pl.hp-=dmg;pl.invuln=1.0;
     if(pl===G.p){addShake(10);G.hurtFlash=1.0;}
     addFT('-'+dmg+' BOOM!',pl.x,pl.y-20,'#ff6600');
@@ -5504,7 +6151,7 @@ function explodeSuicideBomber(e){
     pl.xp=(pl.xp||0)+e.xp;pl.kills=(pl.kills||0)+1;
   });
   checkLevelUp();
-  if(e.g){const g=rand(e.g[0],e.g[1]);if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
+  if(e.g){let g=rand(e.g[0],e.g[1]);if(MUT('bounty'))g*=2;if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
   if(e.eid)(G._mpDeaths=G._mpDeaths||[]).push(e.eid);
   G.lv.enemies=G.lv.enemies.filter(en=>en!==e);
   // Bomber chain cascade
@@ -5571,6 +6218,7 @@ const STAGGER_CFG={
 const STAGGER_DEFAULT={force:155,dur:.20,skipAI:true};
 
 function hitEnemy(e,dmg){
+  if(MUT('glass'))dmg=Math.floor(dmg*1.6); // GLASS mutator — everyone hits harder
   const prevHp=e.hp;
   e.hp-=dmg;e.hitFlash=.15;e.state='chase';
   spawnP(e.x,e.y,e.out||'#888',4);
@@ -5601,9 +6249,12 @@ function killEnemy(e,overkill=0){
     pl.kills=(pl.kills||0)+1;
     pl.xp=(pl.xp||0)+e.xp;
     pl.turbo=Math.min(pl.turboMax2||200,(pl.turbo||0)+8);
+    // VAMPIRIC mutator — heal 8% of max HP on every kill
+    if(MUT('vampiric')&&pl.hp>0){pl.hp=Math.min(pl.maxHp,pl.hp+Math.ceil(pl.maxHp*.08));}
   });
-  if(e.g){const g=rand(e.g[0],e.g[1]);if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
-  if(Math.random()<.18)G.lv.items.push({type:'food',x:e.x,y:e.y,val:rand(10,20),bob:Math.random()*Math.PI*2});
+  // BOUNTY mutator — double gold drops
+  if(e.g){let g=rand(e.g[0],e.g[1]);if(MUT('bounty'))g*=2;if(g>0)G.lv.items.push({type:'gold',x:e.x,y:e.y,val:g,bob:Math.random()*Math.PI*2});}
+  if(!MUT('vampiric')&&Math.random()<.18)G.lv.items.push({type:'food',x:e.x,y:e.y,val:rand(10,20),bob:Math.random()*Math.PI*2});
   SFX.atPos(e.x,e.y);SFX.enemyDie(e.type);
 
   // Kill chain — resets after 2s of no kills, scales hit-stop
@@ -5721,6 +6372,24 @@ function hitBoss(b,dmg){
     SFX.bossDie();addShake(18);G.hitStop=8;
     startBossDeath(b,b.x,b.y);
   }
+}
+
+// Turbo boss damage — universal cap. Every class's turbo, single-hit (lance, meteor)
+// or multi-hit (bombs, slam, rush), is limited to TURBO_BOSS_CAP of the boss's max HP
+// per activation window. Because it's a percentage it scales with boss HP and can't be
+// blown past by shop attack-scaling — which is what caused the old lance one-shots.
+const TURBO_BOSS_CAP=0.08; // 8% of boss max HP per turbo activation
+function hitBossTurbo(b,dmg){
+  if(!b||!b.active||b.dying)return;
+  const now=G.t||0;
+  // A single activation's hits all land within ~1.2s; reset the budget outside that window.
+  if(b._tbStart===undefined||now-b._tbStart>1.2){b._tbStart=now;b._tbDealt=0;}
+  const cap=b.maxHp*TURBO_BOSS_CAP;
+  const room=Math.max(0,cap-(b._tbDealt||0));
+  const apply=Math.min(dmg,room);
+  if(apply<=0)return;
+  b._tbDealt=(b._tbDealt||0)+apply;
+  hitBoss(b,apply); // hitBoss's own per-hit cap won't reduce further since apply <= 8%
 }
 
 // ═══════════════════════════════════════
@@ -6149,9 +6818,14 @@ function updCam(dt){
     G.cam.x=lerp(G.cam.x,tx,5*dt);
     G.cam.y=lerp(G.cam.y,ty,5*dt);
   } else if(MODE==='level'||MODE==='boss'){
-    const margin=TL*3;
-    const tx=clamp(p.x-cv.width/2+lx,-margin,Math.max(0,MW*TL-cv.width+margin));
-    const ty=clamp(p.y-cv.height/2+ly,-margin,Math.max(0,MH*TL-cv.height+margin));
+    // Zoom-aware clamp: keep the player centred but stop the visible region from
+    // running too far past the map edges. Bounds account for the smaller viewport.
+    const Z=CAMZOOM;
+    const hvw=cv.width/(2*Z),hvh=cv.height/(2*Z),allow=TL*2.5;
+    const minX=-allow-cv.width/2+hvw, maxX=MW*TL+allow-cv.width/2-hvw;
+    const minY=-allow-cv.height/2+hvh, maxY=MH*TL+allow-cv.height/2-hvh;
+    const tx=clamp(p.x-cv.width/2+lx,Math.min(minX,maxX),Math.max(minX,maxX));
+    const ty=clamp(p.y-cv.height/2+ly,Math.min(minY,maxY),Math.max(minY,maxY));
     G.cam.x=lerp(G.cam.x,tx,5*dt);
     G.cam.y=lerp(G.cam.y,ty,5*dt);
   }
@@ -6247,6 +6921,96 @@ function drawVignette(){
   }
 }
 
+function drawMinimap(){
+  if(!G.lv?.map)return;
+  const size=Math.min(cv.width,cv.height)*0.20;
+  const cell=size/MW;
+  const pad=10;
+  const mx=cv.width-size-pad;
+  // Shift down past the realm label, and past any MP team cards stacked top-right
+  const teammates=MP.enabled?G.players.filter(rp=>rp&&rp!==G.p&&(rp.playerMode==='level'||rp.playerMode==='boss')).length:0;
+  const my=pad+46+Math.min(3,teammates)*46;
+  ctx.save();
+  ctx.globalAlpha=.72;
+  ctx.fillStyle='#0a0812';
+  ctx.fillRect(mx-3,my-3,size+6,size+6);
+  ctx.globalAlpha=1;
+  ctx.strokeStyle='rgba(160,140,90,.4)';ctx.lineWidth=1.5;
+  ctx.strokeRect(mx-3,my-3,size+6,size+6);
+  ctx.beginPath();ctx.rect(mx-3,my-3,size+6,size+6);ctx.clip();
+  const cc=Math.ceil(cell);
+  for(let y=0;y<MH;y++){
+    const row=G.lv.map[y];if(!row)continue;
+    for(let x=0;x<MW;x++){
+      const t=row[x];
+      if(t===undefined||t===TWALL||t===TSECRET)continue;
+      ctx.fillStyle=t===TEXIT?'#3fae6a':t===TDOOR?'#9a7a3a':'rgba(120,112,140,.5)';
+      ctx.fillRect(mx+x*cell,my+y*cell,cc,cc);
+    }
+  }
+  const toMap=(wx,wy)=>({x:mx+(wx/TL)*cell,y:my+(wy/TL)*cell});
+  if(G.lv.stairsPos){
+    const e=toMap((G.lv.stairsPos.x+.5)*TL,(G.lv.stairsPos.y+.5)*TL);
+    const pulse=.6+.4*Math.sin(G.t*5);
+    ctx.fillStyle='#44ff88';ctx.shadowColor='#44ff88';ctx.shadowBlur=5*pulse;
+    ctx.beginPath();ctx.arc(e.x,e.y,Math.max(2,cell*1.3),0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+  if(G.lv.bossPortal){
+    const b=toMap(G.lv.bossPortal.x,G.lv.bossPortal.y);
+    const pulse=.6+.4*Math.sin(G.t*4);
+    ctx.fillStyle='#ff5599';ctx.shadowColor='#ff5599';ctx.shadowBlur=5*pulse;
+    ctx.beginPath();ctx.arc(b.x,b.y,Math.max(2,cell*1.3),0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+  (G.lv.enemies||[]).forEach(e=>{
+    if(e.hidden||e.alive===false||!isFinite(e.x))return;
+    if(!hasLOS(G.p.x,G.p.y,e.x,e.y))return; // only reveal enemies the player can actually see
+    const m=toMap(e.x,e.y);
+    ctx.fillStyle='rgba(255,76,76,.9)';
+    ctx.fillRect(m.x-1,m.y-1,Math.max(2,cell*.8),Math.max(2,cell*.8));
+  });
+  if(MODE==='boss'&&G.lv.boss?.active){
+    const m=toMap(G.lv.boss.x,G.lv.boss.y);
+    ctx.fillStyle='#ff2244';ctx.shadowColor='#ff2244';ctx.shadowBlur=4;
+    ctx.beginPath();ctx.arc(m.x,m.y,Math.max(2.5,cell*1.6),0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+  G.players.forEach((rp,i)=>{
+    if(!rp||rp===G.p)return;
+    if(rp.playerMode!=='level'&&rp.playerMode!=='boss')return;
+    if(!isFinite(rp.x))return;
+    const m=toMap(rp.x,rp.y);
+    ctx.fillStyle=(MP_COLORS[i]&&MP_COLORS[i].accent)||'#88ccff';
+    ctx.beginPath();ctx.arc(m.x,m.y,Math.max(2,cell*1.1),0,Math.PI*2);ctx.fill();
+  });
+  const me=toMap(G.p.x,G.p.y);
+  ctx.fillStyle='#ffffff';ctx.shadowColor=G.p.charAccent||'#ffcc44';ctx.shadowBlur=6;
+  ctx.beginPath();ctx.arc(me.x,me.y,Math.max(2.5,cell*1.4),0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  if(G.p.facing){
+    ctx.strokeStyle='#ffffff';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(me.x,me.y);
+    ctx.lineTo(me.x+G.p.facing.x*cell*2.4,me.y+G.p.facing.y*cell*2.4);ctx.stroke();
+  }
+  ctx.restore();
+
+  // Active-mutator badge — sits just under the minimap so players remember the condition
+  const _m=mutatorDef(G.lv&&G.lv.mutator);
+  if(_m){
+    const by=my+size+8, bh=18, bw=size+6, bx=mx-3;
+    const pulse=.78+.22*Math.sin(G.t*3);
+    ctx.globalAlpha=.9;
+    ctx.fillStyle='#0a0812';ctx.fillRect(bx,by,bw,bh);
+    ctx.globalAlpha=pulse;
+    ctx.strokeStyle=_m.col;ctx.lineWidth=1.5;ctx.strokeRect(bx,by,bw,bh);
+    ctx.globalAlpha=1;
+    ctx.fillStyle=_m.col;
+    ctx.font='bold 9px Cinzel,serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('✦ '+_m.name,bx+bw/2,by+bh/2);
+  }
+}
+
 function renderLevel(){
   const cb=document.getElementById('coopbtn');if(cb)cb.style.display='none';
   const th=G.curRealm.th;
@@ -6254,7 +7018,13 @@ function renderLevel(){
   ctx.fillStyle=voidBg;ctx.fillRect(0,0,cv.width,cv.height);
   const shx=G.shakeT>0?(Math.random()-.5)*G.shakeT:0;
   const shy=G.shakeT>0?(Math.random()-.5)*G.shakeT:0;
-  ctx.save();ctx.translate(shx-G.cam.x,shy-G.cam.y);
+  ctx.save();
+  // Zoom around screen center, then apply camera translate. The camera keeps the
+  // player centered (see updCam), so zooming around screen center keeps them centered.
+  ctx.translate(cv.width/2,cv.height/2);
+  ctx.scale(CAMZOOM,CAMZOOM);
+  ctx.translate(-cv.width/2,-cv.height/2);
+  ctx.translate(shx-G.cam.x,shy-G.cam.y);
   drawRealmVoid(th);  // realm-specific art outside playable area — drawn first
   drawMap(th);
   if(G.lv.decos&&G.lv.decos.length)drawBossDecos(G.lv.decos);
@@ -6283,23 +7053,26 @@ function renderLevel(){
   drawMeleeArc();
   // AOE shockwave ring
   if(G.shockwave){
-    const sw=G.shockwave,f=sw.timer/.45;
+    const sw=G.shockwave,f=Math.max(0,sw.timer/(sw.maxTimer||.45));
     ctx.strokeStyle=sw.col;ctx.lineWidth=4*(f);
     ctx.shadowColor=sw.col;ctx.shadowBlur=18*f;
     ctx.globalAlpha=f*.8;
-    ctx.beginPath();ctx.arc(sw.x,sw.y,sw.r,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(sw.x,sw.y,Math.max(0,sw.r),0,Math.PI*2);ctx.stroke();
     ctx.globalAlpha=f*.25;ctx.lineWidth=12*f;
-    ctx.beginPath();ctx.arc(sw.x,sw.y,sw.r*.85,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(sw.x,sw.y,Math.max(0,sw.r*.85),0,Math.PI*2);ctx.stroke();
     ctx.globalAlpha=1;ctx.shadowBlur=0;
   }
   ctx.restore();
   drawFTs();drawJoy();drawBtns();updHUD();
   // Screen-space overlays
   drawVignette();
+  drawMinimap();
   if(G.p.turboChargeMax>0){
     const cf=Math.min(1,G.p.turboCharge/G.p.turboChargeMax);
-    const spx=G.p.x-G.cam.x+(G.shakeT>0?(Math.random()-.5)*G.shakeT:0);
-    const spy=G.p.y-G.cam.y+(G.shakeT>0?(Math.random()-.5)*G.shakeT:0);
+    const _sp=worldToScreen(G.p.x,G.p.y);
+    const _jit=(G.shakeT>0?(Math.random()-.5)*G.shakeT:0);
+    const spx=_sp.x+_jit;
+    const spy=_sp.y+(G.shakeT>0?(Math.random()-.5)*G.shakeT:0);
     const isLance=G.p.turboChargeType==='lance';
     const col=isLance?'255,255,255':'245,180,40';
 
@@ -6331,6 +7104,16 @@ function renderLevel(){
       ctx.lineWidth=3+ringF*8;
       ctx.strokeRect(0,0,cv.width,cv.height);
     }
+  }
+  // DARKNESS mutator — vision shrinks to a soft spotlight around the player
+  if(MUT('dark')){
+    const _ds=worldToScreen(G.p.x,G.p.y);
+    const visR=Math.min(cv.width,cv.height)*0.34;
+    const dg=ctx.createRadialGradient(_ds.x,_ds.y,visR*0.45,_ds.x,_ds.y,visR*1.7);
+    dg.addColorStop(0,'rgba(0,0,0,0)');
+    dg.addColorStop(0.7,'rgba(0,0,0,0.62)');
+    dg.addColorStop(1,'rgba(0,0,0,0.9)');
+    ctx.fillStyle=dg;ctx.fillRect(0,0,cv.width,cv.height);
   }
   if(G.hurtFlash>0)G.hurtFlash=Math.max(0,G.hurtFlash-G.dt_last*.018||0.016*.018*60);
 }
@@ -7318,6 +8101,15 @@ function drawEnemies2(){
     const fl=e.hitFlash>0,col=fl?'#ffffff':(e.col||'#bbbbbb'),out=fl?'#ffffff':(e.out||'#000');
     const sz=TL*(e.sz||.5);
     if(!isFinite(sz)||sz<=0){ctx.restore();return;} // skip if corrupted
+    // Frozen enemy: draw an ice halo behind, then tint the body cyan
+    const frozen=e.frozen>0;
+    if(frozen){
+      ctx.shadowColor='#88ddff';ctx.shadowBlur=14;
+      ctx.globalAlpha=.45;
+      ctx.fillStyle='#aaeeff';
+      ctx.beginPath();ctx.arc(0,0,sz*.85,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;ctx.shadowBlur=0;
+    }
     ctx.shadowColor=col;ctx.shadowBlur=fl?20:7;
 
     switch(e.type){
@@ -7807,15 +8599,125 @@ function drawProjs(){
         ctx.beginPath();ctx.arc(t.x,t.y,4*(1-i/pr.trail.length),0,Math.PI*2);ctx.fill();
       });
       ctx.globalAlpha=1;
-      ctx.shadowColor=pr.col;ctx.shadowBlur=10;
-      ctx.fillStyle=pr.col;ctx.beginPath();ctx.arc(pr.x,pr.y,5.5,0,Math.PI*2);ctx.fill();
+      if(pr._hammer){
+        // Dwarf thrown hammer — spinning head + handle
+        pr._spin=(pr._spin||0)+0.5;
+        ctx.save();ctx.translate(pr.x,pr.y);ctx.rotate(pr._spin);
+        ctx.shadowColor=pr.col;ctx.shadowBlur=8;
+        ctx.fillStyle='#5a3a20';ctx.fillRect(-1.5,-3,3,12); // handle
+        ctx.fillStyle='#999999';
+        if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-7,-10,14,8,2);ctx.fill();}
+        else ctx.fillRect(-7,-10,14,8);
+        ctx.fillStyle='#bbbbbb';ctx.fillRect(-7,-10,3,8);
+        ctx.shadowBlur=0;
+        ctx.restore();
+      } else if(pr._blade){
+        // Knight thrown blade — spinning sword/dagger
+        pr._spin=(pr._spin||0)+0.62;
+        ctx.save();ctx.translate(pr.x,pr.y);ctx.rotate(pr._spin);
+        ctx.shadowColor=pr.col;ctx.shadowBlur=9;
+        // Cross-guard
+        ctx.fillStyle='#d4a853';ctx.fillRect(-5,-2,4,4);
+        // Blade
+        ctx.fillStyle='#dCe8f8';
+        ctx.beginPath();ctx.moveTo(-1,-2.4);ctx.lineTo(11,0);ctx.lineTo(-1,2.4);ctx.closePath();ctx.fill();
+        // Edge highlight
+        ctx.fillStyle='#ffffff';
+        ctx.beginPath();ctx.moveTo(-1,-1);ctx.lineTo(9,0);ctx.lineTo(-1,1);ctx.closePath();ctx.fill();
+        // Pommel
+        ctx.fillStyle='#d4a853';ctx.beginPath();ctx.arc(-6,0,2.2,0,Math.PI*2);ctx.fill();
+        ctx.shadowBlur=0;
+        ctx.restore();
+      } else if(pr._wizard){
+        // Wizard magic bolt — bigger, brighter, white-hot core
+        ctx.shadowColor=pr.col;ctx.shadowBlur=16;
+        ctx.fillStyle=pr.col;ctx.beginPath();ctx.arc(pr.x,pr.y,8,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,.85)';ctx.beginPath();ctx.arc(pr.x,pr.y,3.5,0,Math.PI*2);ctx.fill();
+      } else {
+        ctx.shadowColor=pr.col;ctx.shadowBlur=10;
+        ctx.fillStyle=pr.col;ctx.beginPath();ctx.arc(pr.x,pr.y,5.5,0,Math.PI*2);ctx.fill();
+      }
       ctx.shadowBlur=0;
     }
   });
 }
 
+function drawRemoteWizard(rp){
+  ctx.save();ctx.translate(rp.x,rp.y);
+  const idx=rp._playerIdx||1;
+  const col=MP_COLORS[idx]||MP_COLORS[1];
+  const primary=rp.charPrimary||col.primary;
+  const accent=rp.charAccent||col.accent;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const label=`P${idx+1}`;
+  const float=Math.sin(G.t*2.4)*.8;
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,.3)';
+  ctx.beginPath();ctx.ellipse(0,TL*.32,TL*.2,TL*.07,0,0,Math.PI*2);ctx.fill();
+
+  ctx.save();ctx.translate(0,float);
+  // Robe
+  ctx.shadowColor=accent;ctx.shadowBlur=8;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(0,-TL*.12);
+  ctx.lineTo(-TL*.24,TL*.34);
+  ctx.lineTo(TL*.24,TL*.34);
+  ctx.closePath();ctx.fill();
+  // Belt
+  ctx.fillStyle=accent+'cc';
+  ctx.fillRect(-TL*.17,TL*.04,TL*.34,TL*.04);
+  ctx.shadowBlur=0;
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-TL*.22,TL*.11,0,Math.PI*2);ctx.fill();
+  // Beard
+  ctx.fillStyle='#ddddee';
+  ctx.beginPath();
+  ctx.moveTo(-TL*.08,-TL*.17);ctx.lineTo(0,-TL*.05);ctx.lineTo(TL*.08,-TL*.17);
+  ctx.closePath();ctx.fill();
+  // Hat
+  ctx.shadowColor=accent;ctx.shadowBlur=8;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.17,-TL*.26);ctx.lineTo(TL*.17,-TL*.26);ctx.lineTo(TL*.05,-TL*.53);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.18,-TL*.30,TL*.28,TL*.025);
+  ctx.shadowBlur=0;
+  // Staff with orb
+  ctx.save();
+  ctx.translate(TL*.2,-TL*.04);
+  ctx.rotate(-Math.PI/6);
+  ctx.fillStyle='#5a3a20';
+  ctx.fillRect(-1.5,-TL*.48,3,TL*.54);
+  const orbPulse=.85+.15*Math.sin(G.t*3);
+  ctx.shadowColor=accent;ctx.shadowBlur=12*orbPulse;
+  ctx.fillStyle=accent;
+  ctx.beginPath();ctx.arc(0,-TL*.51,TL*.07*orbPulse,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.restore();
+  ctx.restore();
+
+  // Label
+  ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-12,-TL*.62,24,11);
+  ctx.fillStyle=accent;ctx.font='bold 7px Cinzel,serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,0,-TL*.565);
+  // HP bar
+  const hpFrac=Math.max(0,rp.hp/rp.maxHp);
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-14,-TL*.50,28,4);
+  ctx.fillStyle=hpFrac>.5?'#44cc44':hpFrac>.25?'#ccaa22':'#cc2222';
+  ctx.fillRect(-14,-TL*.50,28*hpFrac,4);
+  ctx.restore();
+}
+
 function drawRemotePlayer(rp){
   if(!rp)return;
+  // Class dispatch — wizard and jester render distinct variants
+  if(rp.charClass==='wizard')return drawRemoteWizard(rp);
+  if(rp.charClass==='jester')return drawRemoteJester(rp);
+  if(rp.charClass==='dwarf')return drawRemoteDwarf(rp);
   ctx.save();ctx.translate(rp.x,rp.y);
   const idx=rp._playerIdx||1;
   const col=MP_COLORS[idx]||MP_COLORS[1];
@@ -7855,8 +8757,396 @@ function drawRemotePlayer(rp){
   ctx.restore();
 }
 
+function drawWizardPlayer(p){
+  const primary=p.charPrimary||'#9944cc';
+  const accent=p.charAccent||'#cc88ff';
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const ax=Math.abs(p.facing.x),ay=Math.abs(p.facing.y);
+  const dir=ay>ax?(p.facing.y>0?'s':'n'):(p.facing.x>0?'e':'w');
+
+  ctx.save();ctx.translate(p.x,p.y);
+  if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.35;
+  if(dir==='w')ctx.scale(-1,1);
+
+  const wp=p.walkPhase||0;
+  const bob=Math.abs(Math.sin(wp))*-1.2;
+  const float=Math.sin(G.t*2.4)*.8; // subtle hover when idle
+
+  // Shadow (smaller than knight)
+  ctx.fillStyle='rgba(0,0,0,.32)';
+  ctx.beginPath();ctx.ellipse(0,TL*.32,TL*.22,TL*.08,0,0,Math.PI*2);ctx.fill();
+
+  // Wind-up charge aura — cyan for Nova, red for Meteor
+  if(p.turboChargeMax>0){
+    const cf=Math.min(1,p.turboCharge/p.turboChargeMax);
+    const isMeteor=p.turboChargeType==='lance'; // "lance" name reused; for wizard means meteor
+    const glowCol=isMeteor?'#ff4422':'#88ddff';
+    const pulse=.65+.35*Math.sin(G.t*(8+cf*14));
+    const auraR=TL*(.55+cf*.9)*pulse;
+    ctx.globalAlpha=cf*.5*pulse;
+    ctx.shadowColor=glowCol;ctx.shadowBlur=TL*.8*cf;
+    ctx.fillStyle=glowCol;
+    ctx.beginPath();ctx.arc(0,0,auraR,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.globalAlpha=cf*.7;
+    ctx.strokeStyle=glowCol;ctx.lineWidth=2+cf*3;
+    ctx.beginPath();ctx.arc(0,0,TL*(.28+cf*.18),0,Math.PI*2);ctx.stroke();
+    if(cf>.85){
+      const flareF=(cf-.85)/.15;
+      ctx.globalAlpha=flareF*.5*pulse;
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath();ctx.arc(0,0,TL*.55,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }
+
+  ctx.save();ctx.translate(0,bob+float);
+
+  // Robe — triangular silhouette
+  ctx.shadowColor=accent;ctx.shadowBlur=10;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(0,-TL*.12);
+  ctx.lineTo(-TL*.26,TL*.36);
+  ctx.lineTo(TL*.26,TL*.36);
+  ctx.closePath();ctx.fill();
+  // Hem band
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.26,TL*.30);
+  ctx.lineTo(-TL*.26,TL*.36);
+  ctx.lineTo(TL*.26,TL*.36);
+  ctx.lineTo(TL*.26,TL*.30);
+  ctx.closePath();ctx.fill();
+  // Belt / sash
+  ctx.fillStyle=accent+'cc';
+  ctx.fillRect(-TL*.18,TL*.04,TL*.36,TL*.04);
+  ctx.shadowBlur=0;
+
+  // Arms peeking from robe
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(-TL*.2,-TL*.04,TL*.06,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(TL*.22,-TL*.04,TL*.07,0,Math.PI*2);ctx.fill();
+
+  // Head (skin under hat)
+  ctx.shadowColor=accent;ctx.shadowBlur=6;
+  ctx.fillStyle='#e6c8a8';
+  if(dir==='s'){
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.12,0,Math.PI*2);ctx.fill();
+    // Beard
+    ctx.fillStyle='#ddddee';
+    ctx.beginPath();
+    ctx.moveTo(-TL*.09,-TL*.17);ctx.lineTo(0,-TL*.04);ctx.lineTo(TL*.09,-TL*.17);
+    ctx.closePath();ctx.fill();
+    // Eye glints
+    ctx.shadowBlur=0;
+    ctx.fillStyle=accent;
+    ctx.fillRect(-TL*.055,-TL*.23,TL*.03,TL*.02);
+    ctx.fillRect( TL*.025,-TL*.23,TL*.03,TL*.02);
+  } else if(dir==='n'){
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.12,0,Math.PI*2);ctx.fill();
+    // Back of head; no face details
+  } else {
+    // Side profile
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.11,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ddddee';
+    ctx.beginPath();
+    ctx.moveTo(TL*.02,-TL*.16);ctx.lineTo(TL*.11,-TL*.04);ctx.lineTo(-TL*.02,-TL*.13);
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle=accent;
+    ctx.fillRect(TL*.03,-TL*.23,TL*.03,TL*.02);
+  }
+  ctx.shadowBlur=0;
+
+  // Pointed hat
+  ctx.shadowColor=accent;ctx.shadowBlur=10;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.18,-TL*.26);
+  ctx.lineTo( TL*.18,-TL*.26);
+  ctx.lineTo( TL*.06,-TL*.55);
+  ctx.closePath();ctx.fill();
+  // Brim
+  ctx.fillStyle=dark;
+  ctx.fillRect(-TL*.22,-TL*.27,TL*.44,TL*.04);
+  // Band
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.18,-TL*.30,TL*.30,TL*.025);
+  // Star ornament
+  ctx.beginPath();
+  const sx=TL*.02,sy=-TL*.42;
+  for(let i=0;i<5;i++){
+    const a=-Math.PI/2+i*Math.PI*2/5;
+    const px=sx+Math.cos(a)*TL*.04,py=sy+Math.sin(a)*TL*.04;
+    if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    const a2=a+Math.PI/5;
+    ctx.lineTo(sx+Math.cos(a2)*TL*.02,sy+Math.sin(a2)*TL*.02);
+  }
+  ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Staff is now drawn as an aim-tracked overlay below
+  ctx.restore(); // end translate(0, bob+float)
+  ctx.restore(); // end main save
+
+  // ── Aim-tracked staff — points where you aim, thrusts forward + orb flares on cast ──
+  {
+    const aimA=p.attacking?p.atkAngle:Math.atan2(p.facing.y,p.facing.x);
+    ctx.save();
+    if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.35;
+    ctx.translate(p.x,p.y+bob+float);
+    ctx.rotate(aimA);
+    const thrust=p.attacking?Math.sin(p.atkProg*Math.PI)*TL*0.2:0;
+    ctx.translate(TL*.13+thrust,TL*.02);
+    ctx.rotate(-0.12+Math.sin(wp)*0.05);
+    // Shaft along +X
+    ctx.fillStyle='#5a3a20';ctx.fillRect(0,-1.5,TL*.5,3);
+    ctx.fillStyle='#7a5530';ctx.fillRect(0,-1.5,TL*.5,1);
+    // Orb at the tip — colour matches active charge, flares on cast
+    const orbCol=(p.turboChargeMax>0)?(p.turboChargeType==='lance'?'#ff4422':'#88ddff'):accent;
+    const cast=p.attacking?(1+Math.sin(p.atkProg*Math.PI)*0.9):1;
+    const orbPulse=(.85+.15*Math.sin(G.t*3))*cast;
+    ctx.shadowColor=orbCol;ctx.shadowBlur=16*orbPulse;
+    ctx.fillStyle=orbCol;
+    ctx.beginPath();ctx.arc(TL*.52,0,TL*.08*orbPulse,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=.6;ctx.fillStyle='#ffffff';
+    ctx.beginPath();ctx.arc(TL*.5,-TL*.02,TL*.035,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+    ctx.restore();
+  }
+}
+
+// Jester — slim asymmetric harlequin, pointed cap with bells, bomb in throwing hand.
+// Lighter silhouette than knight, chaotic colour split (primary left / dark right).
+function drawJesterPlayer(p){
+  const primary=p.charPrimary||'#ccbb22';
+  const accent=p.charAccent||'#ffdd66';
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const ax=Math.abs(p.facing.x),ay=Math.abs(p.facing.y);
+  const dir=ay>ax?(p.facing.y>0?'s':'n'):(p.facing.x>0?'e':'w');
+
+  ctx.save();ctx.translate(p.x,p.y);
+  if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.35;
+  if(dir==='w')ctx.scale(-1,1);
+
+  const wp=p.walkPhase||0;
+  const step=Math.sin(wp)>0?1:-1;
+  const bob=Math.abs(Math.sin(wp))*-2.2; // bouncier than knight/wizard
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,.3)';
+  ctx.beginPath();ctx.ellipse(0,TL*.32,TL*.2,TL*.07,0,0,Math.PI*2);ctx.fill();
+
+  // Wind-up charge aura — yellow for Caltrops, orange for Bombs Away
+  if(p.turboChargeMax>0){
+    const cf=Math.min(1,p.turboCharge/p.turboChargeMax);
+    const isBombs=p.turboChargeType==='lance';
+    const glowCol=isBombs?'#ff8822':'#ffcc44';
+    const pulse=.65+.35*Math.sin(G.t*(8+cf*14));
+    const auraR=TL*(.55+cf*.9)*pulse;
+    ctx.globalAlpha=cf*.5*pulse;
+    ctx.shadowColor=glowCol;ctx.shadowBlur=TL*.8*cf;
+    ctx.fillStyle=glowCol;
+    ctx.beginPath();ctx.arc(0,0,auraR,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.globalAlpha=cf*.7;
+    ctx.strokeStyle=glowCol;ctx.lineWidth=2+cf*3;
+    ctx.beginPath();ctx.arc(0,0,TL*(.28+cf*.18),0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }
+
+  ctx.save();ctx.translate(0,bob);
+
+  // Legs — thin and split-coloured
+  ctx.fillStyle=primary;
+  ctx.fillRect(-TL*.15,TL*.08+step*4,TL*.11,TL*.28);
+  ctx.fillStyle=dark;
+  ctx.fillRect(TL*.04,TL*.08-step*4,TL*.11,TL*.28);
+  // Boots
+  ctx.fillStyle='#222';
+  ctx.fillRect(-TL*.16,TL*.34+step*4,TL*.13,TL*.05);
+  ctx.fillRect( TL*.03,TL*.34-step*4,TL*.13,TL*.05);
+  // Curled-up boot tips (jester signature)
+  ctx.fillStyle=accent;
+  ctx.beginPath();ctx.arc(-TL*.04,TL*.36+step*4,TL*.025,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc( TL*.15,TL*.36-step*4,TL*.025,0,Math.PI*2);ctx.fill();
+
+  // Torso — diamond pattern (primary left half, dark right half)
+  ctx.shadowColor=accent;ctx.shadowBlur=8;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.18,-TL*.04);
+  ctx.lineTo(-TL*.04,-TL*.18);
+  ctx.lineTo(-TL*.04,TL*.10);
+  ctx.lineTo(-TL*.18,TL*.10);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo( TL*.18,-TL*.04);
+  ctx.lineTo( TL*.04,-TL*.18);
+  ctx.lineTo( TL*.04,TL*.10);
+  ctx.lineTo( TL*.18,TL*.10);
+  ctx.closePath();ctx.fill();
+  // Diamond points (top-front / front-bottom)
+  ctx.fillStyle=accent;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.04,-TL*.18);
+  ctx.lineTo( TL*.04,-TL*.18);
+  ctx.lineTo( 0,-TL*.10);
+  ctx.closePath();ctx.fill();
+  // Belt — single accent line
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.18,TL*.06,TL*.36,TL*.03);
+  ctx.shadowBlur=0;
+
+  // Off-hand (left side of sprite)
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(-TL*.21,-TL*.02,TL*.06,0,Math.PI*2);ctx.fill();
+  // Throwing hand + bomb are drawn as an aim-tracked overlay after the body
+
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  if(dir==='s'){
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.11,0,Math.PI*2);ctx.fill();
+    // Grinning mouth (curve)
+    ctx.strokeStyle='#5a3a20';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.arc(0,-TL*.21,TL*.05,0,Math.PI);ctx.stroke();
+    // Eyes — mischievous slants
+    ctx.fillStyle='#222';
+    ctx.fillRect(-TL*.06,-TL*.26,TL*.03,TL*.025);
+    ctx.fillRect( TL*.03,-TL*.26,TL*.03,TL*.025);
+  } else if(dir==='n'){
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.11,0,Math.PI*2);ctx.fill();
+  } else {
+    ctx.beginPath();ctx.arc(0,-TL*.22,TL*.10,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#222';
+    ctx.fillRect(TL*.03,-TL*.26,TL*.03,TL*.025);
+  }
+
+  // Pointed cap with 2 tassels and bells
+  ctx.shadowColor=accent;ctx.shadowBlur=8;
+  ctx.fillStyle=primary;
+  // Left horn
+  ctx.beginPath();
+  ctx.moveTo(-TL*.12,-TL*.28);
+  ctx.lineTo(-TL*.02,-TL*.28);
+  ctx.lineTo(-TL*.22,-TL*.48);
+  ctx.closePath();ctx.fill();
+  // Right horn (dark)
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo( TL*.02,-TL*.28);
+  ctx.lineTo( TL*.12,-TL*.28);
+  ctx.lineTo( TL*.22,-TL*.48);
+  ctx.closePath();ctx.fill();
+  // Cap brim
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.14,-TL*.30,TL*.28,TL*.025);
+  // Bells on tips
+  ctx.shadowColor=accent;ctx.shadowBlur=6;
+  ctx.fillStyle=accent;
+  const bellBob=Math.sin(G.t*4)*1.5;
+  ctx.beginPath();ctx.arc(-TL*.22,-TL*.48+bellBob,TL*.035,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc( TL*.22,-TL*.48-bellBob,TL*.035,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  ctx.restore();ctx.restore();
+
+  // ── Aim-tracked throwing hand — winds back, then flings forward on attack ──
+  {
+    const aimA=p.attacking?p.atkAngle:Math.atan2(p.facing.y,p.facing.x);
+    ctx.save();
+    if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.4;
+    ctx.translate(p.x,p.y+bob);
+    ctx.rotate(aimA);
+    // Wind-up: hand pulls back early in the throw, snaps forward past mid
+    let reach;
+    if(p.attacking){
+      reach=p.atkProg<0.4 ? TL*(.05-.18*(p.atkProg/0.4))      // pull back
+                          : TL*(-.13+.42*((p.atkProg-0.4)/0.6)); // fling forward
+    } else {
+      reach=TL*(.16+Math.sin(wp)*0.02);
+    }
+    // Hand
+    ctx.fillStyle='#e6c8a8';
+    ctx.beginPath();ctx.arc(reach,-TL*.05,TL*.06,0,Math.PI*2);ctx.fill();
+    // Bomb stays in hand until the fling completes (then the real projectile takes over)
+    if(!(p.attacking&&p.atkProg>0.7)){
+      ctx.shadowColor='#ff8822';ctx.shadowBlur=6;
+      ctx.fillStyle='#3a2a1a';
+      ctx.beginPath();ctx.arc(reach+TL*.04,-TL*.1,TL*.06,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffcc44';
+      ctx.globalAlpha=.6+.4*Math.sin(G.t*16);
+      ctx.beginPath();ctx.arc(reach+TL*.06,-TL*.16,TL*.022,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;ctx.shadowBlur=0;
+    }
+    ctx.restore();
+  }
+}// Remote jester — slimmer version for other clients to see
+function drawRemoteJester(rp){
+  ctx.save();ctx.translate(rp.x,rp.y);
+  const idx=rp._playerIdx||1;
+  const col=MP_COLORS[idx]||MP_COLORS[1];
+  const primary=rp.charPrimary||col.primary;
+  const accent=rp.charAccent||col.accent;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const label=`P${idx+1}`;
+  const bob=Math.sin(G.t*4)*1.2;
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,.3)';
+  ctx.beginPath();ctx.ellipse(0,TL*.32,TL*.18,TL*.06,0,0,Math.PI*2);ctx.fill();
+
+  ctx.save();ctx.translate(0,bob);
+  // Torso diamond split
+  ctx.shadowColor=accent;ctx.shadowBlur=6;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-TL*.16,-TL*.04);ctx.lineTo(0,-TL*.16);
+  ctx.lineTo(0,TL*.10);ctx.lineTo(-TL*.16,TL*.10);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo( TL*.16,-TL*.04);ctx.lineTo(0,-TL*.16);
+  ctx.lineTo(0,TL*.10);ctx.lineTo( TL*.16,TL*.10);
+  ctx.closePath();ctx.fill();
+  // Belt
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.16,TL*.06,TL*.32,TL*.025);
+  ctx.shadowBlur=0;
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-TL*.22,TL*.1,0,Math.PI*2);ctx.fill();
+  // Cap
+  ctx.shadowColor=accent;ctx.shadowBlur=6;
+  ctx.fillStyle=primary;
+  ctx.beginPath();ctx.moveTo(-TL*.10,-TL*.28);ctx.lineTo(-TL*.02,-TL*.28);ctx.lineTo(-TL*.18,-TL*.46);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.moveTo( TL*.02,-TL*.28);ctx.lineTo( TL*.10,-TL*.28);ctx.lineTo( TL*.18,-TL*.46);ctx.closePath();ctx.fill();
+  // Bells
+  ctx.fillStyle=accent;
+  ctx.beginPath();ctx.arc(-TL*.18,-TL*.46,TL*.03,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc( TL*.18,-TL*.46,TL*.03,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.restore();
+
+  // Label + HP bar
+  ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-12,-TL*.62,24,11);
+  ctx.fillStyle=accent;ctx.font='bold 7px Cinzel,serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,0,-TL*.565);
+  const hpFrac=Math.max(0,rp.hp/rp.maxHp);
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-14,-TL*.50,28,4);
+  ctx.fillStyle=hpFrac>.5?'#44cc44':hpFrac>.25?'#ccaa22':'#cc2222';
+  ctx.fillRect(-14,-TL*.50,28*hpFrac,4);
+  ctx.restore();
+}
+
 function drawPlayer2(){
   const p=G.p;
+  // Class dispatch — Wizard and Jester render entirely different sprites
+  if(p.charClass==='wizard')return drawWizardPlayer(p);
+  if(p.charClass==='jester')return drawJesterPlayer(p);
+  if(p.charClass==='dwarf')return drawDwarfPlayer(p);
   const primary=p.charPrimary||'#2244cc';
   const accent=p.charAccent||'#4488ff';
   const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
@@ -8178,9 +9468,17 @@ function drawBtns(){
 
   ctx.fillStyle=bp2Ready?'#ffffff':bp1Ready?'#f5c542':'#666644';
   ctx.font='16px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',tx,ty);
+  // Label reflects the actual ability that will fire for this class + charge level
+  const TLBL={
+    knight:{bp1:'BURST',bp2:'LANCE'},
+    wizard:{bp1:'NOVA', bp2:'METEOR'},
+    jester:{bp1:'CALTROPS',bp2:'BOMBS'},
+    dwarf: {bp1:'SLAM', bp2:'RUSH'},
+  };
+  const lbl=TLBL[G.p.charClass]||{bp1:'BURST',bp2:'TURBO'};
   ctx.fillStyle=bp2Ready?'rgba(255,255,255,.9)':bp1Ready?'rgba(245,197,66,.8)':'rgba(200,180,80,.4)';
   ctx.font='9px Cinzel,serif';
-  ctx.fillText(bp2Ready?'LANCE':bp1Ready?'BURST':Math.floor(tFrac*100)+'%',tx,ty+tr+14);
+  ctx.fillText(bp2Ready?lbl.bp2:bp1Ready?lbl.bp1:Math.floor(tFrac*100)+'%',tx,ty+tr+14);
 
   // ── PC mouse reticle — follows cursor, shows aim direction ──
   if((MODE==='level'||MODE==='boss')&&!('ontouchstart' in window)){
@@ -8289,26 +9587,119 @@ function drawHudPortrait(){
   const bg=c2.createRadialGradient(20,20,2,20,20,22);
   bg.addColorStop(0,accent+'22');bg.addColorStop(1,'rgba(0,0,0,.6)');
   c2.fillStyle=bg;c2.fillRect(0,0,w,h);
-  // Body
-  c2.fillStyle=primary;
-  c2.beginPath();c2.ellipse(20,25,9,11,0,0,Math.PI*2);c2.fill();
-  // Pauldrons
-  c2.beginPath();c2.ellipse(11,20,5,4,-.3,0,Math.PI*2);c2.fill();
-  c2.beginPath();c2.ellipse(29,20,5,4,.3,0,Math.PI*2);c2.fill();
-  // Head
-  c2.fillStyle=primary;
-  c2.beginPath();c2.arc(20,12,7,0,Math.PI*2);c2.fill();
-  // Visor slit
-  c2.fillStyle=accent+'cc';
-  c2.beginPath();c2.roundRect(14,10,12,4,1);c2.fill();
-  // Glint
-  c2.fillStyle='rgba(255,255,255,.55)';
-  c2.beginPath();c2.ellipse(16,11,2,1,-.3,0,Math.PI*2);c2.fill();
-  // Sword
-  c2.strokeStyle=accent;c2.lineWidth=2;c2.lineCap='round';
-  c2.beginPath();c2.moveTo(30,9);c2.lineTo(34,22);c2.stroke();
-  c2.strokeStyle='rgba(255,255,255,.5)';c2.lineWidth=1;
-  c2.beginPath();c2.moveTo(30,10);c2.lineTo(33,20);c2.stroke();
+
+  if(p.charClass==='wizard'){
+    // Wizard mini-portrait: robe + hat + staff orb
+    // Robe
+    c2.fillStyle=primary;
+    c2.beginPath();
+    c2.moveTo(20,18);c2.lineTo(11,33);c2.lineTo(29,33);
+    c2.closePath();c2.fill();
+    // Belt
+    c2.fillStyle=accent+'cc';
+    c2.fillRect(13,24,14,2);
+    // Head
+    c2.fillStyle='#e6c8a8';
+    c2.beginPath();c2.arc(20,15,4.5,0,Math.PI*2);c2.fill();
+    // Beard
+    c2.fillStyle='#ddddee';
+    c2.beginPath();c2.moveTo(17,16);c2.lineTo(20,20);c2.lineTo(23,16);c2.closePath();c2.fill();
+    // Hat
+    c2.fillStyle=primary;
+    c2.beginPath();c2.moveTo(14,12);c2.lineTo(26,12);c2.lineTo(22,3);c2.closePath();c2.fill();
+    c2.fillStyle=accent;c2.fillRect(14,11,12,1.5);
+    // Star
+    c2.fillStyle=accent;
+    c2.beginPath();c2.arc(22,6,1.2,0,Math.PI*2);c2.fill();
+    // Staff with glowing orb
+    c2.strokeStyle='#5a3a20';c2.lineWidth=1.5;
+    c2.beginPath();c2.moveTo(30,32);c2.lineTo(33,15);c2.stroke();
+    c2.fillStyle=accent;
+    c2.shadowColor=accent;c2.shadowBlur=6;
+    c2.beginPath();c2.arc(33,14,2.5,0,Math.PI*2);c2.fill();
+    c2.shadowBlur=0;
+  } else if(p.charClass==='jester'){
+    // Jester mini-portrait: harlequin diamond + 2-horn cap + bomb in hand
+    const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+    // Torso diamond split
+    c2.fillStyle=primary;
+    c2.beginPath();
+    c2.moveTo(11,21);c2.lineTo(20,16);c2.lineTo(20,34);c2.lineTo(11,34);c2.closePath();c2.fill();
+    c2.fillStyle=dark;
+    c2.beginPath();
+    c2.moveTo(29,21);c2.lineTo(20,16);c2.lineTo(20,34);c2.lineTo(29,34);c2.closePath();c2.fill();
+    // Belt
+    c2.fillStyle=accent;c2.fillRect(11,25,18,2);
+    // Head
+    c2.fillStyle='#e6c8a8';
+    c2.beginPath();c2.arc(20,13,4.5,0,Math.PI*2);c2.fill();
+    // Eyes
+    c2.fillStyle='#222';
+    c2.fillRect(17,12,1.5,1.5);c2.fillRect(21.5,12,1.5,1.5);
+    // Cap — two horns
+    c2.fillStyle=primary;
+    c2.beginPath();c2.moveTo(14,9);c2.lineTo(19,9);c2.lineTo(11,2);c2.closePath();c2.fill();
+    c2.fillStyle=dark;
+    c2.beginPath();c2.moveTo(21,9);c2.lineTo(26,9);c2.lineTo(29,2);c2.closePath();c2.fill();
+    // Bells
+    c2.fillStyle=accent;c2.shadowColor=accent;c2.shadowBlur=4;
+    c2.beginPath();c2.arc(11,2,1.4,0,Math.PI*2);c2.fill();
+    c2.beginPath();c2.arc(29,2,1.4,0,Math.PI*2);c2.fill();
+    c2.shadowBlur=0;
+    // Bomb in throwing hand
+    c2.fillStyle='#3a2a1a';
+    c2.beginPath();c2.arc(32,21,2.5,0,Math.PI*2);c2.fill();
+    // Fuse spark
+    c2.fillStyle='#ffcc44';c2.shadowColor='#ffcc44';c2.shadowBlur=4;
+    c2.beginPath();c2.arc(33,18,1,0,Math.PI*2);c2.fill();
+    c2.shadowBlur=0;
+  } else if(p.charClass==='dwarf'){
+    // Dwarf mini-portrait: broad body, big beard, horned helm
+    const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+    // Broad body
+    c2.fillStyle=primary;c2.fillRect(11,20,18,15);
+    c2.fillStyle='#3a2a1a';c2.fillRect(11,30,18,3);
+    c2.fillStyle=accent;c2.fillRect(18,30,4,3);
+    // Beard
+    c2.fillStyle='#d8c8a8';
+    c2.beginPath();c2.moveTo(14,13);c2.lineTo(26,13);c2.lineTo(20,24);c2.closePath();c2.fill();
+    // Head
+    c2.fillStyle='#e6c8a8';
+    c2.beginPath();c2.arc(20,12,4.5,0,Math.PI*2);c2.fill();
+    c2.fillStyle='#222';c2.fillRect(17.5,11,1.5,1.5);c2.fillRect(21,11,1.5,1.5);
+    // Beard front
+    c2.fillStyle='#d8c8a8';
+    c2.beginPath();c2.moveTo(15.5,13);c2.lineTo(24.5,13);c2.lineTo(20,21);c2.closePath();c2.fill();
+    // Horned helm
+    c2.fillStyle=dark;
+    c2.beginPath();c2.arc(20,10,5,Math.PI,0);c2.closePath();c2.fill();
+    c2.fillStyle=accent;c2.fillRect(15,9.5,10,1.5);
+    // Horns
+    c2.fillStyle='#e8e0d0';c2.shadowColor=accent;c2.shadowBlur=3;
+    c2.beginPath();c2.moveTo(15.5,7.5);c2.lineTo(11,3.5);c2.lineTo(17,6.5);c2.closePath();c2.fill();
+    c2.beginPath();c2.moveTo(24.5,7.5);c2.lineTo(29,3.5);c2.lineTo(23,6.5);c2.closePath();c2.fill();
+    c2.shadowBlur=0;
+  } else {
+    c2.fillStyle=primary;
+    c2.beginPath();c2.ellipse(20,25,9,11,0,0,Math.PI*2);c2.fill();
+    // Pauldrons
+    c2.beginPath();c2.ellipse(11,20,5,4,-.3,0,Math.PI*2);c2.fill();
+    c2.beginPath();c2.ellipse(29,20,5,4,.3,0,Math.PI*2);c2.fill();
+    // Head
+    c2.fillStyle=primary;
+    c2.beginPath();c2.arc(20,12,7,0,Math.PI*2);c2.fill();
+    // Visor slit
+    c2.fillStyle=accent+'cc';
+    c2.beginPath();c2.roundRect(14,10,12,4,1);c2.fill();
+    // Glint
+    c2.fillStyle='rgba(255,255,255,.55)';
+    c2.beginPath();c2.ellipse(16,11,2,1,-.3,0,Math.PI*2);c2.fill();
+    // Sword
+    c2.strokeStyle=accent;c2.lineWidth=2;c2.lineCap='round';
+    c2.beginPath();c2.moveTo(30,9);c2.lineTo(34,22);c2.stroke();
+    c2.strokeStyle='rgba(255,255,255,.5)';c2.lineWidth=1;
+    c2.beginPath();c2.moveTo(30,10);c2.lineTo(33,20);c2.stroke();
+  }
   // Low HP tint — red flash overlay
   if(p.hp/p.maxHp<0.3){
     const f=0.18+0.12*Math.sin(G.t*7);
@@ -8454,7 +9845,13 @@ function loop(ts){
     if(G.shakeT>0)G.shakeT=Math.max(0,G.shakeT-dt*38);
     if(G.hurtFlash>0)G.hurtFlash=Math.max(0,G.hurtFlash-dt*3.2);
     if(G.meleeArc){G.meleeArc.timer-=dt;if(G.meleeArc.timer<=0)G.meleeArc=null;}
-    if(G.shockwave){G.shockwave.timer-=dt;G.shockwave.r=G.shockwave.maxR*(1-G.shockwave.timer/.45);if(G.shockwave.timer<=0)G.shockwave=null;}
+    if(G.shockwave){
+      const sw=G.shockwave;
+      sw.timer-=dt;
+      const mt=sw.maxTimer||.45;
+      sw.r=sw.maxR*(1-Math.max(0,sw.timer/mt));
+      if(sw.timer<=0)G.shockwave=null;
+    }
     G.dt_last=dt;
 
     if(MODE==='charselect'){
@@ -8540,12 +9937,12 @@ function loop(ts){
 const CHAR_CLASSES=[
   {id:'warrior',  name:'Warrior',   icon:'✚', desc:'Unstoppable melee',      locked:true,  col:'#cc4444', stats:{atk:22,spd:135,maxHp:90}},
   {id:'valkyrie', name:'Valkyrie',  icon:'✦', desc:'Shield maiden',          locked:true,  col:'#dd8844', stats:{atk:18,spd:148,maxHp:85}},
-  {id:'wizard',   name:'Wizard',    icon:'✧', desc:'Arcane master',          locked:true,  col:'#9944cc', stats:{atk:24,spd:128,maxHp:68}},
+  {id:'wizard',   name:'Wizard',    icon:'✧', desc:'Arcane control',         locked:false, col:'#9944cc', stats:{atk:26,spd:115,maxHp:70}},
   {id:'archer',   name:'Archer',    icon:'▲', desc:'Swift ranged',           locked:true,  col:'#44aa44', stats:{atk:20,spd:172,maxHp:72}},
   {id:'knight',   name:'Knight',    icon:'◆', desc:'Iron resolve',           locked:false, col:'#4466dd', stats:{atk:18,spd:130,maxHp:100}},
-  {id:'dwarf',    name:'Dwarf',     icon:'●', desc:'Resilient brawler',      locked:true,  col:'#996633', stats:{atk:20,spd:118,maxHp:95}},
+  {id:'dwarf',    name:'Dwarf',     icon:'●', desc:'Unbreakable',           locked:false, col:'#996633', stats:{atk:22,spd:100,maxHp:120}},
   {id:'sorceress',name:'Sorceress', icon:'★', desc:'Transforms enemies',     locked:true,  col:'#cc44aa', stats:{atk:22,spd:140,maxHp:68}},
-  {id:'jester',   name:'Jester',    icon:'♦', desc:'Chaotic trickster',      locked:true,  col:'#ccbb22', stats:{atk:16,spd:162,maxHp:75}},
+  {id:'jester',   name:'Jester',    icon:'♦', desc:'Bombs & chaos',          locked:false, col:'#ccbb22', stats:{atk:20,spd:175,maxHp:65}},
 ];
 const CHAR_COLORS=[
   {id:'red',    label:'Red',    primary:'#cc2222',accent:'#ff6644'},
@@ -8565,6 +9962,370 @@ document.getElementById('startbtn').addEventListener('click',()=>{
 });
 
 // ── Char select rendering ────────────────────────────────────
+function drawWizardPortrait(cx,cy,r,primary,accent,lk){
+  const s=r;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  ctx.save();ctx.translate(cx,cy);
+  if(lk)ctx.globalAlpha=.28;
+  // Robe — triangular silhouette
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.25;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(0,s*.08);
+  ctx.lineTo(-s*.62,s*.86);
+  ctx.lineTo( s*.62,s*.86);
+  ctx.closePath();ctx.fill();
+  // Hem band
+  ctx.fillStyle=dark;
+  ctx.fillRect(-s*.62,s*.74,s*1.24,s*.12);
+  // Belt / sash
+  ctx.fillStyle=accent+'cc';
+  ctx.fillRect(-s*.36,s*.36,s*.72,s*.1);
+  ctx.shadowBlur=0;
+  // Head
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.18;
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-s*.18,s*.26,0,Math.PI*2);ctx.fill();
+  // Beard
+  ctx.fillStyle='#ddddee';
+  ctx.beginPath();
+  ctx.moveTo(-s*.18,-s*.1);ctx.lineTo(0,s*.18);ctx.lineTo(s*.18,-s*.1);
+  ctx.closePath();ctx.fill();
+  // Eye glints
+  ctx.shadowBlur=0;
+  ctx.fillStyle=accent;
+  ctx.fillRect(-s*.12,-s*.22,s*.06,s*.04);
+  ctx.fillRect( s*.06,-s*.22,s*.06,s*.04);
+  // Pointed hat
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.22;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-s*.38,-s*.28);
+  ctx.lineTo( s*.38,-s*.28);
+  ctx.lineTo( s*.12,-s*.92);
+  ctx.closePath();ctx.fill();
+  // Brim
+  ctx.fillStyle=dark;
+  ctx.fillRect(-s*.46,-s*.30,s*.92,s*.08);
+  // Hat band
+  ctx.fillStyle=accent;
+  ctx.fillRect(-s*.38,-s*.4,s*.64,s*.06);
+  // Star
+  ctx.fillStyle=accent;
+  ctx.beginPath();
+  const sx=s*.04,sy=-s*.72;
+  for(let i=0;i<5;i++){
+    const a=-Math.PI/2+i*Math.PI*2/5;
+    const px=sx+Math.cos(a)*s*.08,py=sy+Math.sin(a)*s*.08;
+    if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    const a2=a+Math.PI/5;
+    ctx.lineTo(sx+Math.cos(a2)*s*.04,sy+Math.sin(a2)*s*.04);
+  }
+  ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+// Dwarf — stout, wide, big-bearded, horned helm, hauling a heavy hammer. Squat
+// proportions read "tank" at a glance: low and broad vs the jester's slim height.
+function drawDwarfPlayer(p){
+  const primary=p.charPrimary||'#996633';
+  const accent=p.charAccent||'#d9a066';
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const ax=Math.abs(p.facing.x),ay=Math.abs(p.facing.y);
+  const dir=ay>ax?(p.facing.y>0?'s':'n'):(p.facing.x>0?'e':'w');
+
+  ctx.save();ctx.translate(p.x,p.y);
+  if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.4;
+  if(dir==='w')ctx.scale(-1,1);
+
+  const wp=p.walkPhase||0;
+  const bob=Math.abs(Math.sin(wp))*-1.0; // heavy, low bob
+
+  // Shadow — wide
+  ctx.fillStyle='rgba(0,0,0,.34)';
+  ctx.beginPath();ctx.ellipse(0,TL*.34,TL*.3,TL*.09,0,0,Math.PI*2);ctx.fill();
+
+  // Wind-up charge aura — earthy gold for Slam, brighter for Rush
+  if(p.turboChargeMax>0){
+    const cf=Math.min(1,p.turboCharge/p.turboChargeMax);
+    const isRush=p.turboChargeType==='lance';
+    const glowCol=isRush?'#ffcc66':'#d9a066';
+    const pulse=.65+.35*Math.sin(G.t*(8+cf*14));
+    const auraR=TL*(.6+cf*.95)*pulse;
+    ctx.globalAlpha=cf*.5*pulse;
+    ctx.shadowColor=glowCol;ctx.shadowBlur=TL*.8*cf;
+    ctx.fillStyle=glowCol;
+    ctx.beginPath();ctx.arc(0,0,auraR,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.globalAlpha=cf*.7;
+    ctx.strokeStyle=glowCol;ctx.lineWidth=2+cf*4;
+    ctx.beginPath();ctx.arc(0,0,TL*(.32+cf*.2),0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }
+
+  ctx.save();ctx.translate(0,bob);
+
+  // Legs — short and stubby
+  const step=Math.sin(wp)>0?1:-1;
+  ctx.fillStyle=dark;
+  ctx.fillRect(-TL*.2,TL*.12+step*3,TL*.16,TL*.22);
+  ctx.fillRect( TL*.04,TL*.12-step*3,TL*.16,TL*.22);
+  // Boots
+  ctx.fillStyle='#3a2a1a';
+  ctx.fillRect(-TL*.22,TL*.30+step*3,TL*.2,TL*.07);
+  ctx.fillRect( TL*.02,TL*.30-step*3,TL*.2,TL*.07);
+
+  // Body — broad torso
+  ctx.shadowColor=accent;ctx.shadowBlur=8;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(-TL*.3,-TL*.12,TL*.6,TL*.34,5);
+  else ctx.rect(-TL*.3,-TL*.12,TL*.6,TL*.34);
+  ctx.fill();
+  // Belt
+  ctx.fillStyle='#3a2a1a';
+  ctx.fillRect(-TL*.3,TL*.10,TL*.6,TL*.07);
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.06,TL*.10,TL*.12,TL*.07); // buckle
+  // Chest emblem in accent
+  ctx.fillStyle=accent;
+  ctx.beginPath();ctx.arc(0,-TL*.0,TL*.07,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Big beard — the dwarf's signature, covers lower face
+  ctx.fillStyle='#d8c8a8';
+  ctx.beginPath();
+  ctx.moveTo(-TL*.2,-TL*.2);
+  ctx.lineTo(TL*.2,-TL*.2);
+  ctx.lineTo(TL*.12,TL*.04);
+  ctx.lineTo(0,TL*.1);
+  ctx.lineTo(-TL*.12,TL*.04);
+  ctx.closePath();ctx.fill();
+
+  // Head — mostly helm + beard; small skin band for eyes when facing camera
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-TL*.26,TL*.15,0,Math.PI*2);ctx.fill();
+  if(dir==='s'){
+    ctx.fillStyle='#222';
+    ctx.fillRect(-TL*.08,-TL*.28,TL*.04,TL*.03);
+    ctx.fillRect( TL*.04,-TL*.28,TL*.04,TL*.03);
+  } else if(dir!=='n'){
+    ctx.fillStyle='#222';
+    ctx.fillRect(TL*.03,-TL*.28,TL*.04,TL*.03);
+  }
+  // Re-cover lower face with beard front (so it sits over the head circle)
+  ctx.fillStyle='#d8c8a8';
+  ctx.beginPath();
+  ctx.moveTo(-TL*.15,-TL*.22);
+  ctx.lineTo(TL*.15,-TL*.22);
+  ctx.lineTo(TL*.1,TL*.02);
+  ctx.lineTo(0,TL*.08);
+  ctx.lineTo(-TL*.1,TL*.02);
+  ctx.closePath();ctx.fill();
+
+  // Horned helmet
+  ctx.shadowColor=accent;ctx.shadowBlur=7;
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.arc(0,-TL*.30,TL*.16,Math.PI,0);
+  ctx.lineTo(TL*.16,-TL*.26);ctx.lineTo(-TL*.16,-TL*.26);ctx.closePath();ctx.fill();
+  // Helm rim
+  ctx.fillStyle=accent;
+  ctx.fillRect(-TL*.17,-TL*.27,TL*.34,TL*.04);
+  // Horns
+  ctx.fillStyle='#e8e0d0';
+  ctx.beginPath();ctx.moveTo(-TL*.15,-TL*.34);ctx.quadraticCurveTo(-TL*.3,-TL*.42,-TL*.26,-TL*.5);
+  ctx.quadraticCurveTo(-TL*.2,-TL*.44,-TL*.1,-TL*.38);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(TL*.15,-TL*.34);ctx.quadraticCurveTo(TL*.3,-TL*.42,TL*.26,-TL*.5);
+  ctx.quadraticCurveTo(TL*.2,-TL*.44,TL*.1,-TL*.38);ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Hammer is now drawn as an aim-tracked overlay below (after the body restores)
+  ctx.restore();ctx.restore();
+
+  // ── Aim-tracked hammer — points where you face, swings an overhead smash on attack ──
+  {
+    const aimA=p.attacking?p.atkAngle:Math.atan2(p.facing.y,p.facing.x);
+    ctx.save();
+    if(p.invuln>0&&Math.sin(p.invuln*28)>0)ctx.globalAlpha=.4;
+    ctx.translate(p.x,p.y+bob);
+    ctx.rotate(aimA);
+    ctx.translate(TL*.16,0); // grip in front of the body
+    // Raised at rest, sweeps forward-and-down through the swing
+    const ang=p.attacking?(-1.15+1.8*p.atkProg):(-0.4+Math.sin(wp)*0.06);
+    ctx.rotate(ang);
+    // Handle out along +X
+    ctx.fillStyle='#5a3a20';ctx.fillRect(0,-2.5,TL*.5,5);
+    ctx.fillStyle='#6a4525';ctx.fillRect(0,-2.5,TL*.5,1.5);
+    // Head at the end
+    ctx.shadowColor=accent;ctx.shadowBlur=6;
+    ctx.fillStyle='#888888';
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(TL*.42,-TL*.13,TL*.2,TL*.26,3);ctx.fill();}
+    else ctx.fillRect(TL*.42,-TL*.13,TL*.2,TL*.26);
+    ctx.fillStyle='#aaaaaa';ctx.fillRect(TL*.42,-TL*.13,TL*.2,TL*.06);
+    ctx.shadowBlur=0;
+    // Impact flash at the bottom of the smash
+    if(p.attacking&&p.atkProg>0.7){
+      ctx.globalAlpha=Math.max(0,(1-p.atkProg)/0.3);
+      ctx.fillStyle='#ffe0a0';
+      ctx.beginPath();ctx.arc(TL*.55,0,TL*.13,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
+}
+
+// Remote dwarf — simpler stout body for other clients
+function drawRemoteDwarf(rp){
+  ctx.save();ctx.translate(rp.x,rp.y);
+  const idx=rp._playerIdx||1;
+  const col=MP_COLORS[idx]||MP_COLORS[1];
+  const primary=rp.charPrimary||col.primary;
+  const accent=rp.charAccent||col.accent;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  const label=`P${idx+1}`;
+
+  ctx.fillStyle='rgba(0,0,0,.32)';
+  ctx.beginPath();ctx.ellipse(0,TL*.34,TL*.27,TL*.08,0,0,Math.PI*2);ctx.fill();
+
+  // Body
+  ctx.shadowColor=accent;ctx.shadowBlur=6;
+  ctx.fillStyle=primary;
+  if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-TL*.27,-TL*.1,TL*.54,TL*.32,5);ctx.fill();}
+  else ctx.fillRect(-TL*.27,-TL*.1,TL*.54,TL*.32);
+  ctx.fillStyle='#3a2a1a';ctx.fillRect(-TL*.27,TL*.1,TL*.54,TL*.06);
+  ctx.shadowBlur=0;
+  // Beard
+  ctx.fillStyle='#d8c8a8';
+  ctx.beginPath();ctx.moveTo(-TL*.16,-TL*.18);ctx.lineTo(TL*.16,-TL*.18);ctx.lineTo(0,TL*.06);ctx.closePath();ctx.fill();
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-TL*.24,TL*.13,0,Math.PI*2);ctx.fill();
+  // Helm + horns
+  ctx.shadowColor=accent;ctx.shadowBlur=5;
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(0,-TL*.27,TL*.14,Math.PI,0);ctx.closePath();ctx.fill();
+  ctx.fillStyle=accent;ctx.fillRect(-TL*.15,-TL*.25,TL*.3,TL*.035);
+  ctx.fillStyle='#e8e0d0';
+  ctx.beginPath();ctx.moveTo(-TL*.13,-TL*.31);ctx.lineTo(-TL*.24,-TL*.42);ctx.lineTo(-TL*.08,-TL*.34);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(TL*.13,-TL*.31);ctx.lineTo(TL*.24,-TL*.42);ctx.lineTo(TL*.08,-TL*.34);ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+
+  ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-12,-TL*.62,24,11);
+  ctx.fillStyle=accent;ctx.font='bold 7px Cinzel,serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,0,-TL*.565);
+  const hpFrac=Math.max(0,rp.hp/rp.maxHp);
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-14,-TL*.50,28,4);
+  ctx.fillStyle=hpFrac>.5?'#44cc44':hpFrac>.25?'#ccaa22':'#cc2222';
+  ctx.fillRect(-14,-TL*.50,28*hpFrac,4);
+  ctx.restore();
+}
+
+function drawJesterPortrait(cx,cy,r,primary,accent,lk){
+  const s=r;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  ctx.save();ctx.translate(cx,cy);
+  if(lk)ctx.globalAlpha=.28;
+  // Torso diamond — primary left half, dark right half
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.2;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-s*.48,s*.18);ctx.lineTo(0,-s*.18);
+  ctx.lineTo(0,s*.78);ctx.lineTo(-s*.48,s*.78);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo( s*.48,s*.18);ctx.lineTo(0,-s*.18);
+  ctx.lineTo(0,s*.78);ctx.lineTo( s*.48,s*.78);
+  ctx.closePath();ctx.fill();
+  // Belt
+  ctx.fillStyle=accent;
+  ctx.fillRect(-s*.48,s*.34,s*.96,s*.08);
+  ctx.shadowBlur=0;
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-s*.22,s*.26,0,Math.PI*2);ctx.fill();
+  // Mischievous grin
+  ctx.strokeStyle='#5a3a20';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,-s*.18,s*.1,0,Math.PI);ctx.stroke();
+  // Eyes
+  ctx.fillStyle='#222';
+  ctx.fillRect(-s*.14,-s*.32,s*.07,s*.05);
+  ctx.fillRect( s*.07,-s*.32,s*.07,s*.05);
+  // Two-horned cap
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.2;
+  ctx.fillStyle=primary;
+  ctx.beginPath();
+  ctx.moveTo(-s*.3,-s*.36);ctx.lineTo(-s*.04,-s*.36);ctx.lineTo(-s*.5,-s*.96);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;
+  ctx.beginPath();
+  ctx.moveTo( s*.04,-s*.36);ctx.lineTo( s*.3,-s*.36);ctx.lineTo( s*.5,-s*.96);
+  ctx.closePath();ctx.fill();
+  // Cap brim
+  ctx.fillStyle=accent;
+  ctx.fillRect(-s*.34,-s*.40,s*.68,s*.06);
+  ctx.shadowBlur=0;
+  // Bells at horn tips
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.14;
+  ctx.fillStyle=accent;
+  ctx.beginPath();ctx.arc(-s*.5,-s*.96,s*.08,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc( s*.5,-s*.96,s*.08,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+function drawDwarfPortrait(cx,cy,r,primary,accent,lk){
+  const s=r;
+  const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
+  ctx.save();ctx.translate(cx,cy);
+  if(lk)ctx.globalAlpha=.28;
+  // Broad body
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.2;
+  ctx.fillStyle=primary;
+  if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-s*.62,s*.05,s*1.24,s*.7,s*.1);ctx.fill();}
+  else ctx.fillRect(-s*.62,s*.05,s*1.24,s*.7);
+  ctx.fillStyle='#3a2a1a';ctx.fillRect(-s*.62,s*.48,s*1.24,s*.14);
+  ctx.fillStyle=accent;ctx.fillRect(-s*.12,s*.48,s*.24,s*.14);
+  ctx.shadowBlur=0;
+  // Beard
+  ctx.fillStyle='#d8c8a8';
+  ctx.beginPath();ctx.moveTo(-s*.4,-s*.32);ctx.lineTo(s*.4,-s*.32);ctx.lineTo(s*.22,s*.18);
+  ctx.lineTo(0,s*.32);ctx.lineTo(-s*.22,s*.18);ctx.closePath();ctx.fill();
+  // Head
+  ctx.fillStyle='#e6c8a8';
+  ctx.beginPath();ctx.arc(0,-s*.4,s*.34,0,Math.PI*2);ctx.fill();
+  // Eyes
+  ctx.fillStyle='#222';
+  ctx.fillRect(-s*.18,-s*.46,s*.09,s*.07);
+  ctx.fillRect( s*.09,-s*.46,s*.09,s*.07);
+  // Beard front over lower head
+  ctx.fillStyle='#d8c8a8';
+  ctx.beginPath();ctx.moveTo(-s*.3,-s*.34);ctx.lineTo(s*.3,-s*.34);ctx.lineTo(s*.18,s*.12);
+  ctx.lineTo(0,s*.24);ctx.lineTo(-s*.18,s*.12);ctx.closePath();ctx.fill();
+  // Horned helm
+  ctx.shadowColor=accent;ctx.shadowBlur=s*.18;
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(0,-s*.46,s*.36,Math.PI,0);ctx.closePath();ctx.fill();
+  ctx.fillStyle=accent;ctx.fillRect(-s*.38,-s*.44,s*.76,s*.09);
+  ctx.shadowBlur=0;
+  // Horns
+  ctx.fillStyle='#e8e0d0';
+  ctx.beginPath();ctx.moveTo(-s*.34,-s*.54);ctx.quadraticCurveTo(-s*.66,-s*.78,-s*.56,-s*.96);
+  ctx.quadraticCurveTo(-s*.44,-s*.78,-s*.2,-s*.62);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(s*.34,-s*.54);ctx.quadraticCurveTo(s*.66,-s*.78,s*.56,-s*.96);
+  ctx.quadraticCurveTo(s*.44,-s*.78,s*.2,-s*.62);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+function drawClassPortrait(id,cx,cy,r,primary,accent,lk){
+  if(id==='wizard')return drawWizardPortrait(cx,cy,r,primary,accent,lk);
+  if(id==='jester')return drawJesterPortrait(cx,cy,r,primary,accent,lk);
+  if(id==='dwarf')return drawDwarfPortrait(cx,cy,r,primary,accent,lk);
+  return drawKnightPortrait(cx,cy,r,primary,accent,lk);
+}
+
 function drawKnightPortrait(cx,cy,r,primary,accent,lk){
   const s=r;
   const dark=primary.replace(/[0-9a-f]{2}/gi,h=>Math.max(0,parseInt(h,16)-55).toString(16).padStart(2,'0'));
@@ -8621,9 +10382,19 @@ function drawCharSelect(){
   const maxGridW=Math.min(W-pad*2,820);
   const gridOffX=(W-maxGridW)/2;
   const cw=Math.floor((maxGridW-gap*(cols-1))/cols);
-  const ch=Math.min(118,Math.floor((H-220)/rows));
-  const gridY=Math.min(68,Math.floor(H*.1));
+  // Adaptive card height — leaves room for header above and colour/button below
+  const ch=Math.max(74,Math.min(124,Math.floor((H-250)/rows)));
+  const gridY=Math.max(62,Math.floor(H*.11));
   G._csCards=[];
+
+  // Fit text to a max width by shrinking the font if needed
+  const fitFont=(text,maxW,base,weight)=>{
+    let sz=base;
+    ctx.font=`${weight} ${sz}px Cinzel,serif`;
+    const w=ctx.measureText(text).width;
+    if(w>maxW)sz=Math.max(7,Math.floor(sz*maxW/w));
+    return sz;
+  };
 
   CHAR_CLASSES.forEach((cls,i)=>{
     const col=i%cols,row=Math.floor(i/cols);
@@ -8644,27 +10415,36 @@ function drawCharSelect(){
     ctx.strokeRect(cx,cy,cw,ch);
     ctx.shadowBlur=0;
 
-    // Portrait background circle
-    const pr=cw*.38,pcx=cx+cw/2,pcy=cy+40;
-    ctx.globalAlpha=lk?.15:.6;
+    // Clip portrait + content to the card so nothing bleeds into neighbours
+    ctx.save();
+    ctx.beginPath();ctx.rect(cx,cy,cw,ch);ctx.clip();
+
+    // Portrait — radius constrained by BOTH card width and height so it never overflows
+    const pr=Math.min(cw*0.27,ch*0.28);
+    const pcx=cx+cw/2,pcy=cy+ch*0.36;
+    ctx.globalAlpha=lk?.15:.55;
     ctx.fillStyle=cls.col;
     ctx.beginPath();ctx.arc(pcx,pcy,pr,0,Math.PI*2);ctx.fill();
     ctx.globalAlpha=1;
 
-    // Knight portrait — uses selected armour colour
+    // Class portrait — uses selected accent colour for the active card, dimmed if locked
     const pc=CHAR_COLORS.find(c=>c.id===selectedColor)||CHAR_COLORS[1];
-    drawKnightPortrait(pcx,pcy,pr*.9,lk?'#2a2440':pc.primary,lk?'#3a3560':pc.accent,lk);
+    drawClassPortrait(cls.id,pcx,pcy,pr*0.82,lk?'#2a2440':pc.primary,lk?'#3a3560':pc.accent,lk);
 
-    // Class name
-    ctx.font=`bold ${Math.max(9,Math.floor(cw*.155))}px Cinzel,serif`;
-    ctx.textBaseline='top';
+    // Class name — capped + auto-shrunk to fit card width
+    const nameSz=fitFont(cls.name,cw-12,Math.min(15,Math.floor(cw*0.12)),'bold');
+    ctx.font=`bold ${nameSz}px Cinzel,serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillStyle=lk?'#33304a':sel?'#ffffff':'#8888aa';
-    ctx.fillText(cls.name,pcx,cy+82);
+    ctx.fillText(cls.name,pcx,cy+ch*0.70);
 
-    // Description
-    ctx.font=`${Math.max(8,Math.floor(cw*.12))}px Cinzel,serif`;
+    // Description — capped + auto-shrunk
+    const descSz=fitFont(cls.desc,cw-10,Math.min(10,Math.floor(cw*0.085)),'');
+    ctx.font=`${descSz}px Cinzel,serif`;
     ctx.fillStyle=lk?'#22203a':'#556677';
-    ctx.fillText(cls.desc,pcx,cy+98);
+    ctx.fillText(cls.desc,pcx,cy+ch*0.86);
+
+    ctx.restore(); // end card clip
 
     // LOCKED overlay
     if(lk){
@@ -8679,10 +10459,10 @@ function drawCharSelect(){
       ctx.fillStyle='#0e0c1a';ctx.beginPath();ctx.arc(lox,loy+4,2.5,0,Math.PI*2);ctx.fill();
     } else if(sel){
       // SELECTED badge
-      const bw=cw*.72,bh=13,bx=cx+(cw-bw)/2,by=cy+2;
+      const bw=Math.min(cw*.72,90),bh=13,bx=cx+(cw-bw)/2,by=cy+2;
       ctx.fillStyle=cls.col;ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle='#ffffff';ctx.font=`bold 8px Cinzel,serif`;
-      ctx.textBaseline='middle';ctx.fillText('SELECTED',cx+cw/2,by+bh/2);
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('SELECTED',cx+cw/2,by+bh/2);
     }
   });
 
