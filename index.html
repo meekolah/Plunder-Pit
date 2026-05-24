@@ -122,11 +122,11 @@
 
 <!-- Shop -->
 <div class="overlay hidden" id="shopov">
-  <div class="panel">
-    <h2>⚜ Sumner's Shop ⚜</h2>
-    <div class="hs" id="shopgold" style="color:#f5c542;text-align:right;margin-bottom:12px">Gold: 0</div>
-    <div id="shopitems"></div>
-    <button class="cont" id="shopcont">Continue</button>
+  <div class="panel" style="display:flex;flex-direction:column;max-height:88vh;padding:14px 20px">
+    <h2 style="margin-bottom:4px">🍺 The Gilded Gauntlet 🍺</h2>
+    <div class="hs" id="shopgold" style="color:#f5c542;text-align:right;margin-bottom:4px;flex-shrink:0">Gold: 0</div>
+    <div id="shopitems" style="overflow-y:auto;flex:1 1 auto;min-height:0"></div>
+    <button class="cont" id="shopcont" style="margin-top:8px;flex-shrink:0">Continue</button>
   </div>
 </div>
 
@@ -134,7 +134,7 @@
 <div class="overlay hidden" id="deathov">
   <div class="panel" style="text-align:center">
     <h2>You Have Fallen</h2>
-    <p style="font-style:italic;color:#556;margin-bottom:18px" id="deathsub">Sumner's tower awaits your return…</p>
+    <p style="font-style:italic;color:#556;margin-bottom:18px" id="deathsub">A warm hearth at The Gilded Gauntlet awaits your return…</p>
     <div class="stat-grid" id="dstats"></div>
     <button class="cont" id="drest" style="margin-bottom:8px">Return to Tower</button>
     <br><button class="cont" id="drestart" style="background:rgba(60,20,20,.8);font-size:11px;padding:8px 20px">Start Over</button>
@@ -181,10 +181,6 @@
     </div>
   </div>
 </div>
-<!-- Help button — opens controls -->
-<button id="helpbtn" onclick="toggleControls(true)" style="position:fixed;left:12px;bottom:12px;z-index:70;width:38px;height:38px;border-radius:50%;background:rgba(14,12,26,.85);border:1px solid #3a3560;color:#aab;font-family:'Cinzel',serif;font-size:18px;cursor:pointer">?</button>
-<!-- Music toggle -->
-<button id="musicbtn" onclick="(function(){MUSIC.setEnabled(!MUSIC.isEnabled());this.textContent=MUSIC.isEnabled()?'🎵':'🔇';}).call(this)" style="position:fixed;left:58px;bottom:12px;z-index:70;width:38px;height:38px;border-radius:50%;background:rgba(14,12,26,.85);border:1px solid #3a3560;color:#aab;font-size:16px;cursor:pointer">🎵</button>
 
 <!-- Co-op Modal -->
 <div class="overlay hidden" id="mp-modal" style="background:rgba(0,0,0,.88)" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()">
@@ -263,14 +259,14 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.19';
+const VERSION='1.39';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
 // Convert a world position to screen pixels, accounting for camera + zoom. Used by
 // screen-space overlays (turbo spotlight, etc.) that are anchored to a world point.
 function worldToScreen(wx,wy){
-  const z=(MODE==='level'||MODE==='boss')?CAMZOOM:1;
+  const z=(MODE==='level'||MODE==='boss'||MODE==='hub')?CAMZOOM:1;
   return {
     x:(wx-G.cam.x-cv.width/2)*z+cv.width/2,
     y:(wy-G.cam.y-cv.height/2)*z+cv.height/2,
@@ -367,14 +363,14 @@ function initGame(){
   const _col=CHAR_COLORS.find(c=>c.id===selectedColor)||CHAR_COLORS[1];
   G={
     t:0,
-    p:{x:0,y:0,hp:_cls.stats.maxHp,maxHp:_cls.stats.maxHp,atk:_cls.stats.atk,spd:_cls.stats.spd,level:1,xp:0,xpNext:150,gold:0,
+    p:{x:0,y:0,hp:_cls.stats.maxHp,maxHp:_cls.stats.maxHp,atk:_cls.stats.atk,spd:_cls.stats.spd,level:1,xp:0,xpNext:150,gold:0,crystals:0,rate:_cls.stats.rate||0,luck:_cls.stats.luck||0,familiar:null,
        charClass:_cls.id,charColor:_col.id,charPrimary:_col.primary,charAccent:_col.accent,
        lives:3,
       turbo:0,turboMax:100,turboMax2:200,
        keys:0,item:null,itemTimer:0,
        upgrades:{atk:0,maxhp:0,spd:0},
        invuln:0,facing:{x:1,y:0},atkTimer:0,attacking:false,atkProg:0,atkAngle:0,magTimer:0,kills:0},
-    progress:{unlocked:[],rp:{},crystals:{forsaken:0,mountain:0,castle:0},runestones:[],hubCrystals:[false,false,false,false,false]},
+    progress:{unlocked:[],rp:{},runestones:[],hubCrystals:[false,false,false,false,false]},
     cam:{x:0,y:0},
     players:[],      // all active players — populated after p is set
     localIdx:0,      // which index is the local player
@@ -615,40 +611,43 @@ function procInput(dt){
 // ═══════════════════════════════════════
 // HUB WORLD — WALKABLE
 // ═══════════════════════════════════════
-const HW=26,HH=20;
+const HW=26,HH=26;
 const hubMap=(()=>{
   const m=Array.from({length:HH},()=>Array(HW).fill(TFLOOR));
   for(let x=0;x<HW;x++){m[0][x]=TWALL;m[HH-1][x]=TWALL;}
   for(let y=0;y<HH;y++){m[y][0]=TWALL;m[y][HW-1]=TWALL;}
-  // 2x2 pillars at corners
-  [[4,4],[HW-6,4],[4,HH-6],[HW-6,HH-6]].forEach(([px,py])=>{
-    m[py][px]=m[py][px+1]=m[py+1][px]=m[py+1][px+1]=TWALL;
-  });
   return m;
 })();
 const hubTorches=[
-  {tx:3,ty:3,ph:0},{tx:HW-4,ty:3,ph:1.5},
-  {tx:3,ty:HH-4,ph:3},{tx:HW-4,ty:HH-4,ph:4.5},
-  {tx:Math.floor(HW/2),ty:2,ph:.8},
-  {tx:2,ty:Math.floor(HH/2),ph:1.8},{tx:HW-3,ty:Math.floor(HH/2),ph:3.3},
+  {tx:2,ty:2,ph:0},{tx:HW-3,ty:2,ph:1.5},
+  {tx:2,ty:HH-3,ph:3},{tx:HW-3,ty:HH-3,ph:4.5},
+  {tx:10,ty:11,ph:.8},{tx:15,ty:11,ph:2.2}, // flanking the tavern
 ];
-// Portals placed in the interior so they're always visible from the player's start position
-const HUB_P=[
-  {wx:TL*9,   wy:TL*5.5, rIdx:0}, // top-left  — Forsaken Province
-  {wx:TL*17,  wy:TL*5.5, rIdx:1}, // top-right — Mountain Realm
-  {wx:TL*13,  wy:TL*16,  rIdx:2}, // bottom    — Castle Realm
-];
-const HSX=TL*13, HSY=TL*10;          // Sumner world pos (centre)
-const HPSX=TL*13, HPSY=TL*13;        // Player starts just below Sumner
-// 5 one-time golden crystals — well clear of pillars (which sit at tiles 4-5 and 20-21)
-// 5 crystals in a vertical line leading up into the Forsaken Province portal
-// Portal is at wx=TL*9, wy=TL*5.5 — column spaced TL*0.75 below portal base
+// ── GDL tower layout: 8 themed doors. Left column (top→down): 1 Forsaken, 3 Castle,
+// 4 Sky, 5 Desert.  Right column (top→down): 2 Mountain, 6 Forest, 7 Ice, 8 Dream.
+// Three are playable realms; the other five are GDL-themed placeholders (Coming Soon).
+const HSX=TL*13, HSY=TL*12.5;        // Barkeep (centre of the tower)
+const HPSX=TL*13, HPSY=TL*16.5;      // Player start, just below the bar
+const _LX=6,_RX=20,_RY=[4.5,10,15.5,21];
+const HUB_DOORS=[
+  {n:1,x:_LX,y:_RY[0],name:'Forsaken Province',cc:'#a85cdc',realmId:'forsaken',motif:'undead'},
+  {n:2,x:_RX,y:_RY[0],name:'Mountain Kingdom', cc:'#e0843c',realmId:'mountain',motif:'fire'},
+  {n:3,x:_LX,y:_RY[1],name:'Castle Stronghold',cc:'#5c78c8',realmId:'castle',  motif:'castle'},
+  {n:4,x:_LX,y:_RY[2],name:'Sky Dominion',     cc:'#56c8b0',comingSoon:true,    motif:'sky'},
+  {n:5,x:_LX,y:_RY[3],name:'Desert Land',      cc:'#e0b85a',comingSoon:true,    motif:'desert'},
+  {n:6,x:_RX,y:_RY[1],name:'Forest Realm',     cc:'#4a9a4a',comingSoon:true,    motif:'forest'},
+  {n:7,x:_RX,y:_RY[2],name:'Ice Domain',       cc:'#88d8ff',comingSoon:true,    motif:'ice'},
+  {n:8,x:_RX,y:_RY[3],name:'Dream World',      cc:'#cc88ee',comingSoon:true,    motif:'dream'},
+  {n:0,x:13, y:2.6,    name:'Trial of Champions',cc:'#ff5544',bossRush:true,     motif:'trial'},
+].map(d=>({...d,wx:d.x*TL,wy:d.y*TL,realm:REALMS.find(r=>r.id===d.realmId)||null}));
+// 5 one-time golden crystals — a breadcrumb trail leading from the player's start up to
+// the Forsaken Province door (top-left); collecting all five unlocks that realm.
 const HUB_CRYSTALS=[
-  {x:TL*9, y:TL*10.5},  // furthest from portal (near player)
-  {x:TL*9, y:TL*9.75},
-  {x:TL*9, y:TL*9.0},
-  {x:TL*9, y:TL*8.25},
-  {x:TL*9, y:TL*7.5},   // closest to portal entrance
+  {x:TL*11.5, y:TL*15},   // nearest the player start
+  {x:TL*10,   y:TL*12.5},
+  {x:TL*8.5,  y:TL*10},
+  {x:TL*7.5,  y:TL*7.5},
+  {x:TL*6.2,  y:TL*5.8},  // right beneath the Forsaken portal
 ];
 
 function solidHub(wx,wy){
@@ -673,10 +672,10 @@ function updateHubWalk(dt){
   p.y=clamp(p.y,TL*.3,(HH-.3)*TL);
   if(len>.1)p.walkPhase=(p.walkPhase||0)+dt*(spd*.038);
 
-  // Detect nearest portal or Sumner
+  // Detect nearest door or the Barkeep
   G.hubNear=null;
-  HUB_P.forEach((pt,i)=>{
-    if(dist(p,{x:pt.wx,y:pt.wy})<TL*2.4)G.hubNear={type:'portal',i};
+  HUB_DOORS.forEach((d,i)=>{
+    if(dist(p,{x:d.wx,y:d.wy})<TL*2.4)G.hubNear={type:'portal',i};
   });
   if(!G.hubNear&&dist(p,{x:HSX,y:HSY})<TL*2.8)G.hubNear={type:'sumner'};
 
@@ -701,15 +700,17 @@ function updateHubWalk(dt){
   if(G.inp.atk&&!p._hubPressed&&dist(p,{x:DEV_X,y:DEV_Y})<TL*1.2){
     p._hubPressed=true;
     G.p.gold=9999;
+    G.p.crystals=50;
     G.p.turbo=G.p.turboMax2||200;
     G.p.magTimer=0;
     G._devMode=true;
     ['forsaken','mountain','castle'].forEach(id=>{
       if(!G.progress.unlocked.includes(id))G.progress.unlocked.push(id);
+      if(G.progress.rp[id])G.progress.rp[id].bossDown=true; // unlocks the Trial of Champions
     });
     G.progress.hubCrystals=[true,true,true,true,true];
     addFT('👾 DEV',DEV_X,DEV_Y-TL,'#f5c542');
-    showMsg('👾 Dev mode — infinite gold & turbo');
+    showMsg('👾 Dev mode — gold, turbo & Trial unlocked');
     return;
   }
 
@@ -718,7 +719,14 @@ function updateHubWalk(dt){
     p._hubPressed=true;
     if(G.hubNear){
       if(G.hubNear.type==='portal'){
-        const pt=HUB_P[G.hubNear.i],realm=REALMS[pt.rIdx];
+        const d=HUB_DOORS[G.hubNear.i];
+        if(d.comingSoon){showMsg(`${d.name} — the portal is sealed… for now.`);return;}
+        if(d.bossRush){
+          if(!REALMS.every(r=>G.progress.rp[r.id]?.bossDown)){showMsg('Clear all three realms to unlock the Trial.');return;}
+          if(MP.enabled&&!MP.isHost){showMsg('Waiting for host to start the Trial…');return;}
+          startBossRush();return;
+        }
+        const realm=d.realm;
         if(!G.progress.unlocked.includes(realm.id)){showMsg(`Requires ${realm.unlockCost} crystals`);return;}
         const prog=G.progress.rp[realm.id];
         G.curRealm=realm;
@@ -741,6 +749,67 @@ function updateHubWalk(dt){
   if(!G.inp.atk)p._hubPressed=false;
 }
 
+// Small themed emblem floating in each door's void — gives every realm a visual identity.
+function drawDoorMotif(motif,x,y,col,alpha){
+  ctx.save();ctx.translate(x,y);ctx.globalAlpha=alpha;
+  ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=2;ctx.lineCap='round';
+  const bob=Math.sin(G.t*1.6+x*.05)*2;ctx.translate(0,bob);
+  switch(motif){
+    case 'undead':{ // skull
+      ctx.beginPath();ctx.arc(0,-2,9,Math.PI,0);ctx.lineTo(7,6);ctx.lineTo(-7,6);ctx.closePath();ctx.fill();
+      ctx.globalAlpha=alpha*.9;ctx.fillStyle='#040008';
+      ctx.beginPath();ctx.arc(-3.5,-2,2.4,0,7);ctx.arc(3.5,-2,2.4,0,7);ctx.fill();
+      ctx.fillRect(-1,2,2,4);
+      break; }
+    case 'fire':{ // flame
+      ctx.beginPath();ctx.moveTo(0,-12);ctx.quadraticCurveTo(8,-2,4,6);
+      ctx.quadraticCurveTo(2,11,0,9);ctx.quadraticCurveTo(-2,11,-4,6);
+      ctx.quadraticCurveTo(-8,-2,0,-12);ctx.fill();
+      break; }
+    case 'castle':{ // battlement + flag
+      ctx.fillRect(-9,-2,18,11);
+      [-9,-3,3].forEach(bx=>ctx.fillRect(bx,-7,4,5));
+      ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-7);ctx.lineTo(0,-15);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,-15);ctx.lineTo(7,-13);ctx.lineTo(0,-11);ctx.fill();
+      break; }
+    case 'sky':{ // cloud + swirl
+      ctx.beginPath();ctx.arc(-5,2,5,0,7);ctx.arc(3,2,6,0,7);ctx.arc(-1,-2,5,0,7);ctx.fill();
+      ctx.globalAlpha=alpha*.8;ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.arc(0,-1,9,-1,2.6);ctx.stroke();
+      break; }
+    case 'desert':{ // pyramid + sun
+      ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(10,8);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();
+      ctx.globalAlpha=alpha*.6;ctx.fillStyle='#040008';ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(3,8);ctx.lineTo(-3,8);ctx.closePath();ctx.fill();
+      ctx.globalAlpha=alpha;ctx.fillStyle=col;ctx.beginPath();ctx.arc(7,-9,3,0,7);ctx.fill();
+      break; }
+    case 'forest':{ // tree
+      ctx.fillRect(-1.5,2,3,8);
+      ctx.beginPath();ctx.arc(0,-3,7,0,7);ctx.arc(-5,1,5,0,7);ctx.arc(5,1,5,0,7);ctx.fill();
+      break; }
+    case 'ice':{ // snowflake
+      ctx.lineWidth=2;
+      for(let a=0;a<6;a++){ctx.save();ctx.rotate(a/6*Math.PI*2);
+        ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-11);
+        ctx.moveTo(0,-6);ctx.lineTo(-3,-9);ctx.moveTo(0,-6);ctx.lineTo(3,-9);ctx.stroke();ctx.restore();}
+      break; }
+    case 'dream':{ // crescent moon + stars
+      ctx.beginPath();ctx.arc(0,0,8,0,7);ctx.fill();
+      ctx.globalAlpha=alpha;ctx.fillStyle='#040008';ctx.beginPath();ctx.arc(3,-1,7,0,7);ctx.fill();
+      ctx.fillStyle=col;ctx.globalAlpha=alpha*.9;
+      [[9,-8],[-9,6],[7,9]].forEach(([sx,sy])=>{ctx.fillRect(sx-1,sy,2,2);});
+      break; }
+    case 'trial':{ // crossed swords
+      ctx.lineWidth=2.4;ctx.lineCap='round';
+      [[-1,1],[1,1]].forEach(([sx])=>{ctx.save();ctx.scale(sx,1);
+        ctx.beginPath();ctx.moveTo(2,9);ctx.lineTo(-8,-9);ctx.stroke();      // blade
+        ctx.lineWidth=3.2;ctx.beginPath();ctx.moveTo(3,11);ctx.lineTo(1,7);ctx.stroke(); // hilt
+        ctx.lineWidth=2.4;ctx.beginPath();ctx.moveTo(-1,5);ctx.lineTo(5,3);ctx.stroke(); // guard
+        ctx.restore();});
+      break; }
+  }
+  ctx.restore();
+}
+
 function drawHub(){
   // Hard-reset all canvas state — prevents transform accumulation from causing ghost circles
   ctx.setTransform(1,0,0,1,0,0);
@@ -756,7 +825,13 @@ function drawHub(){
     document.body.appendChild(cb);
   }
   document.getElementById('coopbtn').style.display='flex';
-  ctx.save();ctx.translate(-G.cam.x,-G.cam.y);
+  ctx.save();
+  // Zoom around screen centre, then apply camera translate — same as a level so the hub
+  // reads at the in-level scale and the player stays centred.
+  ctx.translate(cv.width/2,cv.height/2);
+  ctx.scale(CAMZOOM,CAMZOOM);
+  ctx.translate(-cv.width/2,-cv.height/2);
+  ctx.translate(-G.cam.x,-G.cam.y);
 
   // Hub tiles
   const cl=Math.floor(G.cam.x/TL)-1,ct=Math.floor(G.cam.y/TL)-1;
@@ -774,18 +849,13 @@ function drawHub(){
   }
 
   // ── REALM ZONE ATMOSPHERE ──
-  // Each portal's area is tinted with that realm's colour, creating distinct zones
-  const zoneData=[
-    {cx:TL*9,   cy:TL*6,       rx:TL*3, ry:TL*2.5, col:'rgba(130,60,220,',  rIdx:0}, // Forsaken
-    {cx:TL*17,  cy:TL*6,       rx:TL*3, ry:TL*2.5, col:'rgba(180,100,40,',  rIdx:1}, // Mountain
-    {cx:TL*13,  cy:TL*16.5,    rx:TL*3, ry:TL*2,   col:'rgba(55,80,180,',   rIdx:2}, // Castle
-  ];
-  zoneData.forEach(z=>{
-    // Atmospheric floor glow for this realm
-    ctx.save();ctx.translate(z.cx,z.cy);ctx.scale(1,z.ry/z.rx);
-    const gr=ctx.createRadialGradient(0,0,0,0,0,z.rx);
-    gr.addColorStop(0,z.col+'.16)');gr.addColorStop(.6,z.col+'.07)');gr.addColorStop(1,z.col+'0)');
-    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(0,0,z.rx,0,Math.PI*2);ctx.fill();
+  // Each door's surrounding floor is tinted with its realm theme colour, creating
+  // distinct themed zones around the tower (GDL-style).
+  HUB_DOORS.forEach(d=>{
+    ctx.save();ctx.translate(d.wx,d.wy+TL*.6);ctx.scale(1,.8);
+    const gr=ctx.createRadialGradient(0,0,0,0,0,TL*3.2);
+    gr.addColorStop(0,hexA(d.cc,.15));gr.addColorStop(.6,hexA(d.cc,.06));gr.addColorStop(1,hexA(d.cc,0));
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(0,0,TL*3.2,0,Math.PI*2);ctx.fill();
     ctx.restore();
   });
 
@@ -804,61 +874,47 @@ function drawHub(){
   }
   ctx.restore();
 
-  // Hub torches — colour-tinted by nearest realm zone
-  const torchZoneColors=['rgba(255,185,70,','rgba(255,130,50,','rgba(185,70,255,','rgba(212,170,83,'];
+  // Hub torches — warm tavern light (door zones carry the realm colours now)
   hubTorches.forEach((torch,ti)=>{
     const wx=(torch.tx+.5)*TL,wy=(torch.ty+.5)*TL;
     const f=.85+.15*Math.sin(G.t*3.8+torch.ph);
-    // Pick torch colour based on proximity to realm zones
-    let torchCol='rgba(212,168,83,';
-    const distL=Math.hypot(wx-TL*7,wy-TL*7),distR=Math.hypot(wx-TL*19,wy-TL*7);
-    const distB=Math.hypot(wx-TL*13,wy-TL*17);
-    if(distL<distR&&distL<distB) torchCol='rgba(160,90,255,';
-    else if(distR<distL&&distR<distB) torchCol='rgba(220,140,60,';
-    else if(distB<distL&&distB<distR) torchCol='rgba(90,130,255,';
+    const torchCol='rgba(255,170,70,';
     const gr=ctx.createRadialGradient(wx,wy,0,wx,wy,TL*2.5);
-    gr.addColorStop(0,torchCol+(0.22*f)+')');gr.addColorStop(1,'rgba(0,0,0,0)');
+    gr.addColorStop(0,torchCol+(0.2*f)+')');gr.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=gr;ctx.beginPath();ctx.arc(wx,wy,TL*2.5,0,Math.PI*2);ctx.fill();
     ctx.fillStyle='#b8903a';ctx.fillRect(wx-3,wy-5,6,9);
-    const flameParts=torchCol.split(',');
-    ctx.fillStyle=`rgba(${flameParts[0].slice(5)},${flameParts[1]},${flameParts[2]},${f})`;
-    ctx.shadowColor=`rgb(${flameParts[0].slice(5)},${flameParts[1]},${flameParts[2]})`;
-    ctx.shadowBlur=8*f;
+    ctx.fillStyle=`rgba(255,180,80,${f})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=8*f;
     ctx.beginPath();ctx.arc(wx,wy-7,4.5*f,0,Math.PI*2);ctx.fill();
     ctx.shadowBlur=0;
   });
 
-  // Portal archways — GDL-style: stone pillars, dark void, swirling energy
-  HUB_P.forEach((pt,i)=>{
-    const realm=REALMS[pt.rIdx];
-    const ul=G.progress.unlocked.includes(realm.id);
-    const done=G.progress.rp[realm.id].bossDown;
-    const col=done?'#d4a853':ul?realm.cc:'#334455';
+  // Portal archways — GDL-style: stone pillars, dark void, themed motif + swirling energy
+  HUB_DOORS.forEach((d,i)=>{
+    const realm=d.realm;
+    const cs=!!d.comingSoon;
+    const br=!!d.bossRush;
+    // Boss Rush unlocks once every playable realm's boss has fallen.
+    const brReady=br&&REALMS.every(r=>G.progress.rp[r.id]?.bossDown);
+    const ul=br?brReady:(cs?false:G.progress.unlocked.includes(realm.id));
+    const done=(cs||br)?false:G.progress.rp[realm.id].bossDown;
+    const lit=cs||ul; // themed (lit) vs locked-grey
+    const col=done?'#d4a853':(lit?d.cc:'#334455');
     const near=G.hubNear?.type==='portal'&&G.hubNear?.i===i;
 
-    // Dimensions
-    const aw=TL*1.15;      // portal opening width
-    const ah=TL*2.4;       // portal opening height
-    const pw=TL*.22;       // pillar column width
-    const lh=TL*.2;        // lintel height
-    const ox=pt.wx-aw/2, oy=pt.wy-ah/2;  // top-left of opening
+    const aw=TL*1.15, ah=TL*2.4, pw=TL*.22, lh=TL*.2;
+    const ox=d.wx-aw/2, oy=d.wy-ah/2;
 
     // Outer halo
-    const halo=ctx.createRadialGradient(pt.wx,pt.wy,0,pt.wx,pt.wy,TL*3.8);
+    const halo=ctx.createRadialGradient(d.wx,d.wy,0,d.wx,d.wy,TL*3.8);
     halo.addColorStop(0,hexA(col,.22));halo.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=halo;ctx.beginPath();ctx.arc(pt.wx,pt.wy,TL*3.8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=halo;ctx.beginPath();ctx.arc(d.wx,d.wy,TL*3.8,0,Math.PI*2);ctx.fill();
 
     // ── Stone frame ──
     ctx.fillStyle='#18102e';ctx.strokeStyle=hexA(col,near?.7:.45);ctx.lineWidth=1.5;
-    // Left pillar
     ctx.fillRect(ox-pw,oy-lh,pw,ah+lh);ctx.strokeRect(ox-pw,oy-lh,pw,ah+lh);
-    // Right pillar
     ctx.fillRect(ox+aw,oy-lh,pw,ah+lh);ctx.strokeRect(ox+aw,oy-lh,pw,ah+lh);
-    // Lintel (top bar)
     ctx.fillRect(ox-pw,oy-lh,aw+pw*2,lh);ctx.strokeRect(ox-pw,oy-lh,aw+pw*2,lh);
-    // Arch cap on top of lintel
-    ctx.beginPath();ctx.arc(pt.wx,oy-lh,pw*.8,Math.PI,0);ctx.fill();ctx.stroke();
-    // Pillar corner caps
+    ctx.beginPath();ctx.arc(d.wx,oy-lh,pw*.8,Math.PI,0);ctx.fill();ctx.stroke();
     [[ox-pw,oy+ah],[ox+aw,oy+ah]].forEach(([bx,by])=>{
       ctx.fillRect(bx-2,by,pw+4,lh*.6);ctx.strokeRect(bx-2,by,pw+4,lh*.6);
     });
@@ -866,71 +922,78 @@ function drawHub(){
     // ── Portal void interior ──
     ctx.fillStyle='#020008';ctx.fillRect(ox,oy,aw,ah);
 
-    if(ul){
-      // Edge bleed — realm colour seeps inward from sides
+    // Themed motif floating in the void (identity for every door)
+    ctx.save();ctx.rect(ox,oy,aw,ah);ctx.clip();
+    drawDoorMotif(d.motif,d.wx,d.wy-TL*.1,col,lit?(cs?.5:.7):.2);
+    ctx.restore();
+
+    if(lit){
+      // Edge bleed — theme colour seeps inward
       const edgeL=ctx.createLinearGradient(ox,0,ox+aw*.35,0);
-      edgeL.addColorStop(0,hexA(col,.45));edgeL.addColorStop(1,'rgba(0,0,0,0)');
+      edgeL.addColorStop(0,hexA(col,.4));edgeL.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=edgeL;ctx.fillRect(ox,oy,aw*.35,ah);
       const edgeR=ctx.createLinearGradient(ox+aw,0,ox+aw*.65,0);
-      edgeR.addColorStop(0,hexA(col,.45));edgeR.addColorStop(1,'rgba(0,0,0,0)');
+      edgeR.addColorStop(0,hexA(col,.4));edgeR.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=edgeR;ctx.fillRect(ox+aw*.65,oy,aw*.35,ah);
 
-      // Swirling concentric rings (drawn clipped to portal opening)
-      ctx.save();
-      ctx.rect(ox,oy,aw,ah);ctx.clip();
-      ctx.translate(pt.wx,pt.wy);
+      // Swirling rings (sealed doors swirl slower/fainter)
+      const sw=cs?.3:.55, spd=cs?.5:1;
+      ctx.save();ctx.rect(ox,oy,aw,ah);ctx.clip();ctx.translate(d.wx,d.wy);
       for(let r=0;r<4;r++){
-        ctx.save();
-        ctx.rotate(-G.t*(1.1+r*.35)+r*1.4);
-        ctx.scale(1,ah/aw);
+        ctx.save();ctx.rotate(-G.t*(1.1+r*.35)*spd+r*1.4);ctx.scale(1,ah/aw);
         const rad=aw*(.22+r*.14);
-        ctx.strokeStyle=hexA(col,.55-r*.1);ctx.lineWidth=1.5-r*.2;
+        ctx.strokeStyle=hexA(col,sw-r*.1);ctx.lineWidth=1.5-r*.2;
         ctx.beginPath();ctx.arc(0,0,rad,0,Math.PI*(1.1+r*.25));ctx.stroke();
         ctx.restore();
       }
       ctx.restore();
-
-      // Central depth glow (deep void pull)
-      const depthPulse=.1+.07*Math.sin(G.t*2.4+i);
-      const dpGr=ctx.createRadialGradient(pt.wx,pt.wy,0,pt.wx,pt.wy,aw*.5);
-      dpGr.addColorStop(0,hexA(col,depthPulse));dpGr.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.save();ctx.rect(ox,oy,aw,ah);ctx.clip();
-      ctx.fillStyle=dpGr;ctx.fillRect(ox,oy,aw,ah);
-      ctx.restore();
     } else {
-      // Locked: faint rune cross in void
+      // Locked (not yet unlocked playable realm): faint rune cross
       ctx.strokeStyle=hexA(col,.18);ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(pt.wx,oy+4);ctx.lineTo(pt.wx,oy+ah-4);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(ox+4,pt.wy);ctx.lineTo(ox+aw-4,pt.wy);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(d.wx,oy+4);ctx.lineTo(d.wx,oy+ah-4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ox+4,d.wy);ctx.lineTo(ox+aw-4,d.wy);ctx.stroke();
     }
 
-    // Frame glow border over void
+    // Coming-soon doors get a translucent "sealed" sheen + lock
+    if(cs){
+      ctx.fillStyle='rgba(10,8,20,.45)';ctx.fillRect(ox,oy,aw,ah);
+      ctx.strokeStyle=hexA(col,.5);ctx.lineWidth=2;
+      ctx.strokeRect(d.wx-7,d.wy+2,14,11); // padlock body
+      ctx.beginPath();ctx.arc(d.wx,d.wy+2,5,Math.PI,0);ctx.stroke(); // shackle
+    }
+
+    // Frame glow border
     ctx.shadowColor=col;ctx.shadowBlur=near?18:7;
     ctx.strokeStyle=col;ctx.lineWidth=near?2.2:1.4;
     ctx.strokeRect(ox,oy,aw,ah);
     ctx.shadowBlur=0;ctx.shadowColor='transparent';
 
-    // ── Portal text ──
+    // ── Door label ──
     const labelY=oy+ah+lh+6;
-    ctx.font=`bold 14px Cinzel,serif`;
-    ctx.textAlign='center';ctx.textBaseline='top';
-    const nw=ctx.measureText(realm.name).width+14;
-    ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(pt.wx-nw/2,labelY-2,nw,19);
-    ctx.fillStyle=near?'#fff':done?'#d4a853':ul?col:'#667799';
+    ctx.font=`bold 13px Cinzel,serif`;ctx.textAlign='center';ctx.textBaseline='top';
+    const nw=ctx.measureText(d.name).width+14;
+    ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(d.wx-nw/2,labelY-2,nw,18);
+    ctx.fillStyle=near?'#fff':done?'#d4a853':lit?col:'#667799';
     ctx.shadowColor=col;ctx.shadowBlur=near?10:0;
-    ctx.fillText(realm.name,pt.wx,labelY);ctx.shadowBlur=0;ctx.shadowColor='transparent';
+    ctx.fillText(d.name,d.wx,labelY);ctx.shadowBlur=0;ctx.shadowColor='transparent';
 
+    // ── Status line ──
     ctx.font=`12px Cinzel,serif`;
     let stTxt='',stCol='#aabbcc';
-    if(!ul){
-      const need=realm.unlockCost;
-      const have=realm.order===0?G.progress.hubCrystals.filter(Boolean).length:G.progress.crystals[REALMS[realm.order-1].id]||0;
-      stTxt=`${have}/${need} ✦`;stCol=have>=need?'#44ff88':'#6688aa';
+    if(br){stTxt=ul?'⚔ Enter the Trial':'🔒 Clear all realms';stCol=ul?'#ff7766':'#6688aa';}
+    else if(cs){stTxt='✦ Coming Soon';stCol=hexA(col,.85);}
+    else if(!ul){
+      if(realm.order===0){
+        const have=G.progress.hubCrystals.filter(Boolean).length;
+        stTxt=`${have}/${realm.unlockCost} ✦`;stCol=have>=realm.unlockCost?'#44ff88':'#6688aa';
+      } else {
+        stTxt=`🔒 Clear ${REALMS[realm.order-1].name}`;stCol='#6688aa';
+      }
     } else if(done){stTxt='✓ Cleared';stCol='#d4a853';}
     else{const lc=G.progress.rp[realm.id].lvDone;stTxt=`Level ${lc+1}/${realm.lvs+1}`;stCol='#8899bb';}
-    const sw=ctx.measureText(stTxt).width+10;
-    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(pt.wx-sw/2,labelY+18,sw,17);
-    ctx.fillStyle=stCol;ctx.fillText(stTxt,pt.wx,labelY+19);
+    const stw=ctx.measureText(stTxt).width+10;
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(d.wx-stw/2,labelY+17,stw,16);
+    ctx.fillStyle=stCol;ctx.fillText(stTxt,d.wx,labelY+18);
   });
 
   // Hub crystals — drawn AFTER portals so they float visibly inside the portal void
@@ -956,19 +1019,80 @@ function drawHub(){
     ctx.restore();
   });
 
-  // Sumner
+  // ── THE TIPSY WYRM — tavern nook (the warm heart of the hub) ──
   const near=G.hubNear?.type==='sumner';
-  const gr2=ctx.createRadialGradient(HSX,HSY,0,HSX,HSY,TL*2.5);
-  gr2.addColorStop(0,`rgba(212,168,83,${near?.18:.1})`);gr2.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=gr2;ctx.beginPath();ctx.arc(HSX,HSY,TL*2.5,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#1a1530';ctx.beginPath();ctx.ellipse(HSX,HSY+14,22,10,0,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle=near?'#d4a853':'rgba(212,168,83,.35)';ctx.lineWidth=1;ctx.stroke();
+  // Warm wooden floor patch under the bar
+  ctx.save();
+  ctx.fillStyle='#3a2616';
+  ctx.beginPath();ctx.ellipse(HSX,HSY+10,64,34,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(90,60,34,.6)';ctx.lineWidth=1; // plank lines
+  for(let py=-26;py<=40;py+=8){ctx.beginPath();ctx.moveTo(HSX-62,HSY+10+py*.7);ctx.lineTo(HSX+62,HSY+10+py*.7);ctx.stroke();}
+  ctx.restore();
+  // Hearth glow — warm, inviting, brighter when you're near
+  const hg=ctx.createRadialGradient(HSX,HSY,0,HSX,HSY,TL*3.2);
+  const hgA=near?.26:.17;
+  hg.addColorStop(0,`rgba(255,170,70,${hgA})`);hg.addColorStop(.6,`rgba(255,120,40,${hgA*.4})`);hg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=hg;ctx.beginPath();ctx.arc(HSX,HSY,TL*3.2,0,Math.PI*2);ctx.fill();
+
+  // Helper: a little wooden barrel
+  const barrel=(bx,by,s)=>{
+    ctx.save();ctx.translate(bx,by);ctx.scale(s,s);
+    ctx.fillStyle='#6e4a28';ctx.beginPath();ctx.ellipse(0,0,9,12,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5a3b20';ctx.fillRect(-9,-2,18,4);
+    ctx.strokeStyle='#caa15a';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(-9,-6);ctx.lineTo(9,-6);ctx.moveTo(-9,6);ctx.lineTo(9,6);ctx.stroke();
+    ctx.fillStyle='#7d5230';ctx.beginPath();ctx.ellipse(0,-12,7,2.5,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  };
+  // Flanking barrels + a stacked keg (behind the counter)
+  barrel(HSX-34,HSY+6,1.0);
+  barrel(HSX+34,HSY+4,1.05);
+  barrel(HSX+30,HSY-12,.8);
+
+  // Hanging tavern sign above the bar
+  ctx.save();
+  const sy=HSY-TL*2.0, sway=Math.sin(G.t*1.3)*.04;
+  ctx.translate(HSX,sy);ctx.rotate(sway);
+  ctx.strokeStyle='#4a3420';ctx.lineWidth=1.5; // chains
+  ctx.beginPath();ctx.moveTo(-34,-10);ctx.lineTo(-34,0);ctx.moveTo(34,-10);ctx.lineTo(34,0);ctx.stroke();
+  ctx.fillStyle='#3a2614';ctx.fillRect(-40,0,80,20); // board
+  ctx.strokeStyle='#caa15a';ctx.lineWidth=1.5;ctx.strokeRect(-40,0,80,20);
+  ctx.fillStyle=near?'#ffd27a':'#d4a853';ctx.font='italic 8.5px Cinzel,serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('The Gilded Gauntlet',0,10);
+  // a little hanging mug icon
+  ctx.fillStyle='#caa15a';ctx.fillRect(-3,24,6,5);
+  ctx.restore();
+
+  // Barkeep shadow + sprite
+  ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(HSX,HSY+15,20,8,0,0,Math.PI*2);ctx.fill();
   drawSumner(HSX,HSY);
+
+  // Bar counter in FRONT of the barkeep (he stands behind it)
+  ctx.fillStyle='#5a3b22';ctx.fillRect(HSX-32,HSY+18,64,13);
+  ctx.fillStyle='#6e4a2c';ctx.fillRect(HSX-32,HSY+18,64,4);           // worn top edge
+  ctx.fillStyle='#4a2f1a';ctx.fillRect(HSX-32,HSY+29,64,2);           // base shadow
+  ctx.strokeStyle=near?'rgba(212,168,83,.7)':'rgba(212,168,83,.3)';ctx.lineWidth=1;
+  ctx.strokeRect(HSX-32,HSY+18,64,13);
+  // tankards + a candle on the counter
+  ctx.fillStyle='#caa15a';
+  ctx.fillRect(HSX-22,HSY+13,5,6);ctx.fillRect(HSX+16,HSY+13,5,6);
+  ctx.fillStyle='#f5f0e0';ctx.beginPath();ctx.arc(HSX-19.5,HSY+13,2,0,Math.PI*2);ctx.arc(HSX+18.5,HSY+13,2,0,Math.PI*2);ctx.fill();
+  // candle flame
+  const cf=.7+.3*Math.sin(G.t*7);
+  ctx.fillStyle='#e8e0c0';ctx.fillRect(HSX-1,HSY+14,2,5);
+  ctx.fillStyle=`rgba(255,190,90,${cf})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=7*cf;
+  ctx.beginPath();ctx.arc(HSX,HSY+12,2*cf,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
 
   // Proximity prompt (drawn in world space above character)
   if(G.hubNear){
-    const label=G.hubNear.type==='sumner'?'⚔ / Z  Open Shop':(()=>{
-      const r=REALMS[HUB_P[G.hubNear.i].rIdx];
+    const label=G.hubNear.type==='sumner'?'🍺 / Z  The Gilded Gauntlet':(()=>{
+      const d=HUB_DOORS[G.hubNear.i];
+      if(d.comingSoon)return `✦ ${d.name} — Coming Soon`;
+      if(d.bossRush){
+        const ready=REALMS.every(r=>G.progress.rp[r.id]?.bossDown);
+        return ready?`⚔ / Z  Trial of Champions`:`🔒 Trial — clear all realms first`;
+      }
+      const r=d.realm;
       return G.progress.rp[r.id].bossDown?`⚔ / Z  Re-enter ${r.name}`:`⚔ / Z  Enter ${r.name}`;
     })();
     const py=G.p.y-TL*1.4;
@@ -992,6 +1116,7 @@ function drawHub(){
     if(rp&&rp!==G.p&&(rp.playerMode==='hub'||!rp.playerMode))drawRemotePlayer(rp);
   });
   drawPlayer2();
+  if(G.p.familiar){famOrbit(G.p,G.localIdx||0);drawFamiliar(G.p);}
   drawProjs();
   // Particles
   drawParts();
@@ -1036,25 +1161,70 @@ function drawHub(){
   }
 }
 
+// The Barkeep — jolly, aproned, raising a foaming tankard. The warm heart of the hub.
 function drawSumner(x,y){
   ctx.save();ctx.translate(x,y);
-  ctx.fillStyle='#2a3888';ctx.beginPath();ctx.ellipse(0,5,15,22,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='rgba(255,230,80,.55)';ctx.font='8px serif';
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillText('★',0,0);ctx.fillText('★',-8,9);ctx.fillText('★',8,7);
-  ctx.fillStyle='#f0c888';ctx.beginPath();ctx.arc(0,-17,11,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#e0e0e0';ctx.fillRect(-6,-13,12,9);
-  ctx.fillStyle='#223';ctx.beginPath();ctx.arc(-4,-18,2,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(4,-18,2,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#2a3888';
-  ctx.beginPath();ctx.moveTo(-13,-19);ctx.lineTo(13,-19);ctx.lineTo(5,-40);ctx.lineTo(-5,-40);ctx.fill();
-  ctx.fillRect(-15,-22,30,6);
-  ctx.fillStyle='#f5c542';ctx.font='11px serif';ctx.fillText('★',0,-30);
-  ctx.fillStyle='#7a5a10';ctx.fillRect(13,-32,4,44);
-  const sph=8+4*Math.sin(G.t*2.2);
-  ctx.fillStyle='#cc88ff';ctx.shadowColor='#cc88ff';ctx.shadowBlur=sph;
-  ctx.beginPath();ctx.arc(15,-34,7,0,Math.PI*2);ctx.fill();
-  ctx.shadowBlur=0;
+  const bob=Math.sin(G.t*2)*1.1;
+  // ── Torso: cream shirt ──
+  ctx.fillStyle='#e8dcc2';
+  ctx.beginPath();ctx.moveTo(-13,13);ctx.quadraticCurveTo(-16,-5,-10,-8);
+  ctx.lineTo(10,-8);ctx.quadraticCurveTo(16,-5,13,13);ctx.closePath();ctx.fill();
+  // rolled-sleeve shoulders
+  ctx.beginPath();ctx.ellipse(-12,-3,5,7,.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(12,-3,5,7,-.3,0,Math.PI*2);ctx.fill();
+  // bare forearm (left, resting on bar)
+  ctx.fillStyle='#e8b282';
+  ctx.beginPath();ctx.ellipse(-14,8,3.6,6,.2,0,Math.PI*2);ctx.fill();
+  // ── Leather apron ──
+  ctx.fillStyle='#6b4226';
+  ctx.beginPath();ctx.moveTo(-9,-3);ctx.lineTo(9,-3);ctx.lineTo(11,14);ctx.lineTo(-11,14);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#7d5230';ctx.fillRect(-6,4,12,6); // pocket
+  ctx.strokeStyle='#4a2c18';ctx.lineWidth=1;ctx.strokeRect(-6,4,12,6);
+  ctx.strokeStyle='#5a3720';ctx.lineWidth=2; // straps
+  ctx.beginPath();ctx.moveTo(-7,-3);ctx.lineTo(-4,-11);ctx.moveTo(7,-3);ctx.lineTo(4,-11);ctx.stroke();
+  // towel over shoulder
+  ctx.fillStyle='#d2cdbb';ctx.save();ctx.rotate(.32);ctx.fillRect(7,-13,5,13);ctx.restore();
+  // ── Head ──
+  const hy=-17+bob*.3;
+  ctx.fillStyle='#f0c090';ctx.beginPath();ctx.arc(0,hy,11,0,Math.PI*2);ctx.fill();
+  // full head of hair — swept back with a slight quiff, hairline above the eyes
+  ctx.fillStyle='#6a4326';
+  ctx.beginPath();
+  ctx.moveTo(-10.5,hy-2);
+  ctx.quadraticCurveTo(-13,hy-12,-3,hy-13);
+  ctx.quadraticCurveTo(0,hy-15.5,4,hy-12);
+  ctx.quadraticCurveTo(13,hy-11,10.5,hy-2);
+  ctx.quadraticCurveTo(6,hy-6,0,hy-5);
+  ctx.quadraticCurveTo(-6,hy-6,-10.5,hy-2);
+  ctx.closePath();ctx.fill();
+  // sideburns behind the ears
+  ctx.beginPath();ctx.arc(-10,hy,3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(10,hy,3,0,Math.PI*2);ctx.fill();
+  // hair sheen
+  ctx.fillStyle='#7d5230';
+  ctx.beginPath();ctx.ellipse(-3,hy-9,4,2.4,-.3,0,Math.PI*2);ctx.fill();
+  // rosy cheeks
+  ctx.fillStyle='rgba(232,120,90,.4)';
+  ctx.beginPath();ctx.arc(-6,hy+2,2.6,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6,hy+2,2.6,0,Math.PI*2);ctx.fill();
+  // eyes
+  ctx.fillStyle='#2a2018';
+  ctx.beginPath();ctx.arc(-4,hy-1,1.6,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(4,hy-1,1.6,0,Math.PI*2);ctx.fill();
+  // big bushy mustache
+  ctx.fillStyle='#5a3a1e';
+  ctx.beginPath();ctx.moveTo(-7,hy+4);ctx.quadraticCurveTo(0,hy+7,7,hy+4);
+  ctx.quadraticCurveTo(3,hy+8,0,hy+7.5);ctx.quadraticCurveTo(-3,hy+8,-7,hy+4);ctx.fill();
+  // ── Foaming tankard, raised ──
+  const mx=16,my=1+bob;
+  ctx.fillStyle='#caa15a';ctx.fillRect(mx-4,my-5,8,11);
+  ctx.strokeStyle='#8a6a30';ctx.lineWidth=1;ctx.strokeRect(mx-4,my-5,8,11);
+  ctx.beginPath();ctx.arc(mx+5,my,3.4,-1.2,1.2);ctx.stroke(); // handle
+  ctx.fillStyle='#c8821e';ctx.fillRect(mx-3.5,my-2,7,7); // ale
+  ctx.fillStyle='#f5f0e0'; // foam
+  ctx.beginPath();ctx.arc(mx-2,my-5,2.5,0,Math.PI*2);ctx.arc(mx+1,my-6,2.8,0,Math.PI*2);ctx.arc(mx+3,my-5,2.2,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,250,235,.7)'; // a rising bubble
+  const bub=(G.t*26)%13;ctx.beginPath();ctx.arc(mx,my-5-bub*.4,1,0,Math.PI*2);ctx.fill();
   ctx.restore();
 }
 
@@ -1838,16 +2008,25 @@ function genLevel(realm,lvNum,isBoss){
 
   // Shuffle corridors so slicing gives random positions
   corrPts.sort(()=>Math.random()-.5);
-  // Guarantee at least 18 crystals per level (2 levels × 18 > 15 unlock threshold)
-  const nCrystals=Math.max(18,Math.floor(corrPts.length*.45));
-  const crystalPts=corrPts.slice(0,nCrystals);
+  // 3 crystals per floor: 2 on the corridors you'll naturally pass, 1 tucked into a
+  // dead-end to reward exploring. Themed to the realm (collected into one shared pool).
+  const isFloorT=(x,y)=>x>0&&y>0&&x<MW&&y<MH&&map[y]&&map[y][x]===TFLOOR;
+  const onPath=corrPts.slice(0,2);
+  let secluded=null;
+  for(const [tx,ty] of corrPts){
+    if(onPath.some(p=>p[0]===tx&&p[1]===ty))continue;
+    const nbrs=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>isFloorT(tx+dx,ty+dy)).length;
+    if(nbrs<=1){secluded=[tx,ty];break;} // a dead-end = a good hiding spot
+  }
+  if(!secluded)secluded=corrPts[2]||onPath[0];
+  const crystalPts=[...onPath,secluded].filter(Boolean);
   crystalPts.forEach(([tx,ty])=>
     items.push({type:'crystal',x:(tx+.5)*TL,y:(ty+.5)*TL,realm:realm.id,bob:Math.random()*Math.PI*2}));
 
   // ── SPIKE TILES in remaining corridor tiles ──
   // Max 1 spike per 3 consecutive tiles, never adjacent to another spike
   const spikeSet=new Set();
-  corrPts.slice(nCrystals).forEach(([tx,ty],i,arr)=>{
+  corrPts.slice(3).forEach(([tx,ty],i,arr)=>{
     if(Math.random()>.12)return; // ~12% base chance
     // Enforce gap — skip if either neighbour already has a spike
     const hasAdj=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>spikeSet.has(`${tx+dx},${ty+dy}`));
@@ -2114,9 +2293,6 @@ function breakBarrel(b){
   // Food — 40% chance (suppressed on Vampiric floors: kills are the only heal source)
   if(!MUT('vampiric')&&Math.random()<.4)
     G.lv.items.push({type:'food',...scatter(),val:rand(18,38)});
-  // Crystal — 18% chance
-  if(Math.random()<.18&&G.curRealm)
-    G.lv.items.push({type:'crystal',...scatter(),realm:G.curRealm.id});
 }
 
 function drawBarrels(){
@@ -2829,6 +3005,24 @@ function updateWyrm(b,p,dt){
 // ── DRAGON LORD — Throne Room ─────────────────────────────────
 // GDL ref: Red Dragon/Chimera boss. Regal, patrols throne room,
 // breathes fire in cones, rains fire from above, summons guards.
+// FLAME WAVE — telegraphed full-width fire rows with safe gaps between them. A random
+// vertical phase shifts which rows burn each cast; gaps stay wide enough to stand in.
+function dragonFlameRows(b){
+  const topY=(BOSS_BY+1.5)*TL, botY=(BOSS_BY+BOSS_BH-1.5)*TL;
+  const cx=(BOSS_BX+BOSS_BW/2)*TL, halfW=(BOSS_BW/2-1)*TL;
+  const bandTh=TL*2.3;                              // fire row thickness (~2.3 tiles)
+  const gapTh=b.phase>=4?TL*2.2:TL*2.7;             // safe gap (a touch tighter at phase 4)
+  const period=bandTh+gapTh;
+  const startOff=Math.random()*period;             // random phase so rows vary each cast
+  for(let y=topY-startOff; y<botY; y+=period){
+    const bandTop=Math.max(topY,y), bandBot=Math.min(botY,y+bandTh);
+    if(bandBot-bandTop<TL*0.9)continue;             // skip slivers at the edges
+    const center=(bandTop+bandBot)/2, halfH=(bandBot-bandTop)/2;
+    addWarning(cx,center,{delay:1.3,atk:b.atk*1.3,col:'#ff5500',r:halfW,
+      band:true,bandW:halfW,bandH:halfH,hazardDur:1.6});
+  }
+}
+
 function updateDragon(b,p,dt){
   if(!b.bossState) b.bossState={
     mode:'patrol',
@@ -2880,27 +3074,18 @@ function updateDragon(b,p,dt){
   }
 
   if(s.mode==='flame_rain'){
-    // Fires a barrage of flame projectiles from the top of the throne room
-    // Player must dodge horizontally — carpet axis becomes dangerous
+    // FLAME WAVE — the Dragon hovers and ignites rows of the floor (created on entry).
+    // Player must stand in the safe gaps. The bands are independent warning→hazards.
     b.vx=lerp(b.vx,0,5*dt);b.vy=lerp(b.vy,0,5*dt);
     b.x+=b.vx*dt;b.y+=b.vy*dt;
+    // ember glow at the maw while casting
+    for(let i=0;i<2;i++)G.parts.push({x:b.x+(Math.random()-.5)*TL,y:b.y+(Math.random()-.5)*TL,
+      vx:(Math.random()-.5)*40,vy:-30-Math.random()*40,life:.4,ml:.4,sz:3+Math.random()*3,col:Math.random()<.5?'#ff6600':'#ffcc33'});
     s.timer-=dt;
-    if(s.timer<=0){
-      const roofY=(BOSS_BY+2)*TL;
-      const cols=b.phase>=4?8:6;
-      for(let i=0;i<cols;i++){
-        const wx=(BOSS_BX+3+i*(BOSS_BW-6)/cols+.5)*TL;
-        const delay=i*80+Math.random()*60;
-        setTimeout(()=>{
-          if(!G.lv?.boss)return;
-          G.projs.push({x:wx,y:roofY,vx:(Math.random()-.5)*30,vy:240,
-            life:2,isBoss:true,atk:b.atk*.6,col:'#ff6600',trail:[],isTurbo:false});
-        },delay);
-      }
-      s.mode='patrol';s.timer=[0,2.2,1.8,1.4,1.0][b.phase];
-    }
+    if(s.timer<=0){s.mode='patrol';s.timer=[0,2.2,1.8,1.4,1.0][b.phase];}
     return;
   }
+
 
   // FLAME STRIKE — marks player + 2 random positions, erupts after 1.5s (phase 2+)
   if(b.phase>=2){
@@ -2969,8 +3154,10 @@ function updateDragon(b,p,dt){
   if(s.timer<=0){
     const roll=Math.random();
     if(b.phase>=2&&roll<.35){
-      // FLAME RAIN — carpet axis fire
-      s.mode='flame_rain';s.timer=0.6;
+      // FLAME WAVE — ignite rows of the floor, leaving safe gaps to stand in
+      s.mode='flame_rain';s.timer=1.5;
+      addFT('FLAME WAVE!',b.x,b.y-TL*b.sz*1.6,'#ff5500');
+      dragonFlameRows(b);
     } else {
       // FIRE BREATH — telegraph wind-up, then rapid aimed cone
       s.mode='breath_wind';
@@ -3094,7 +3281,7 @@ function startLevel(realm,lvNum){
   G.cam.x=p.x-cv.width/2;G.cam.y=p.y-cv.height/2;
   G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.lv.ff=null;
   p.invuln=.6;
-  G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress.crystals[realm.id]||0,t:G.t};
+  G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.p.crystals||0,t:G.t};
   G.shakeT=0;
   MODE='level';
   document.getElementById('hud').classList.remove('hidden');
@@ -3111,13 +3298,45 @@ function startBoss(){
   G.cam.x=p.x-cv.width/2;G.cam.y=p.y-cv.height/2;
   G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.lv.ff=null;
   p.invuln=.6;
-  G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.progress.crystals[G.curRealm?.id]||0,t:G.t};
+  G.floorStats={kills:G.p.kills,gold:G.p.gold,crystals:G.p.crystals||0,t:G.t};
   G.shakeT=0;
   MODE='boss';
   document.getElementById('hud').classList.remove('hidden');
   showRLabel('⚠ ' + realm.boss.name);
   // Pull clients into the boss arena
   if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
+}
+
+// ── BOSS RUSH (Trial of Champions) — fight every realm boss back-to-back, with a shop
+// between each. Unlocked once all realms are cleared. Uses the player's full upgraded build.
+function startBossRush(){
+  G.bossRush={seq:REALMS.map(r=>r.id),idx:0};
+  G.p.hp=G.p.maxHp;                 // enter the trial at full health
+  G.curRealm=REALMS[0];G.curLvNum=0;
+  showMsg('⚔ Trial of Champions — survive every boss!');
+  startBoss();
+}
+function bossRushAdvance(){
+  // Called after a boss falls during the rush — go to the next boss (via shop) or finish.
+  G.bossRush.idx++;
+  if(G.bossRush.idx>=G.bossRush.seq.length){
+    const total=G.bossRush.seq.length;
+    G.bossRush=null;
+    openSummary({
+      title:'Trial of Champions — Cleared!',subtitle:'Every boss has fallen',col:'#ff7766',
+      rows:[{icon:'⚔',label:'Bosses slain',value:String(total)},{icon:'👑',label:'Champion',value:'✓'}],
+      btnText:'Return to Tower →',
+      onContinue:()=>{shopAction='hub';openShop('Return to Tower');},
+    });
+  } else {
+    const next=REALMS.find(r=>r.id===G.bossRush.seq[G.bossRush.idx]);
+    openSummary({
+      title:G.curRealm.boss.name+' Defeated!',subtitle:'Trial — next: '+next.boss.name,col:'#ff7766',
+      rows:[{icon:'⚔',label:'Bosses left',value:String(G.bossRush.seq.length-G.bossRush.idx)}],
+      btnText:'Next Boss →',
+      onContinue:()=>{G.curRealm=next;G.p.hp=Math.min(G.p.maxHp,G.p.hp+Math.floor(G.p.maxHp*.35));shopAction='bossRushNext';openShop('Next Boss →');},
+    });
+  }
 }
 
 function toggleControls(show){
@@ -3137,7 +3356,7 @@ function lvComplete(){
   const fs=G.floorStats||{kills:0,gold:0,crystals:0,t:G.t};
   const kills=G.p.kills-fs.kills;
   const goldEarned=G.p.gold-fs.gold;
-  const crystals=(G.progress.crystals[r.id]||0)-fs.crystals;
+  const crystals=(G.p.crystals||0)-fs.crystals;
   const sec=Math.max(0,Math.round(G.t-fs.t));
   const tStr=Math.floor(sec/60)+':'+(sec%60<10?'0':'')+sec%60;
   const isBoss=prog.lvDone>=r.lvs;
@@ -3161,10 +3380,12 @@ function lvComplete(){
 
 function bossComplete(bx,by){
   const r=G.curRealm,prog=G.progress.rp[r.id];
-  prog.bossDown=true;
-  if(!G.progress.runestones.includes(r.id))G.progress.runestones.push(r.id);
+  if(!G.bossRush){
+    prog.bossDown=true;
+    if(!G.progress.runestones.includes(r.id))G.progress.runestones.push(r.id);
+    checkUnlocks();
+  }
   showMsg(`${r.boss.name} defeated! Collect the spoils!`);
-  checkUnlocks();
 
   // Portal spawns at arena centre — scatter loot there, not at boss death pos
   const px=(BOSS_BX+BOSS_BW/2+.5)*TL,py=(BOSS_BY+BOSS_BH/2+.5)*TL;
@@ -3182,9 +3403,15 @@ function bossComplete(bx,by){
     return{x:cx+Math.cos(a)*minR,y:cy+Math.sin(a)*minR,bob:0};
   };
 
-  const POWERUPS=['triple_shot','rapid_fire','fury','barrier'];
-  for(let i=0;i<5;i++) G.lv.items.push({type:'gold',...safePos(px,py,TL*1.2,TL*2.8),val:rand(40,100)});
-  G.lv.items.push({type:'powerup',id:POWERUPS[rand(0,POWERUPS.length-1)],...safePos(px,py,TL*1.2,TL*2.2)});
+  // Boss spoils — a generous haul of coins AND crystals that burst from the boss and arc out
+  // to land scattered around the portal. Coins fuel the run; crystals are the permanent payday.
+  const launch=it=>{it._drop=true;it._t0=G.t;it._dur=0.42+Math.random()*0.3;it._sx=px;it._sy=py;it._pop=TL*(0.7+Math.random()*0.8);return it;};
+  for(let i=0;i<6;i++) G.lv.items.push(launch({type:'gold',...safePos(px,py,TL*1.2,TL*2.8),val:rand(60,120)}));
+  for(let i=0;i<5;i++) G.lv.items.push(launch({type:'crystal',...safePos(px,py,TL*1.6,TL*3.4),realm:r.id}));
+  // Loot-burst flourish at the boss centre
+  for(let i=0;i<24;i++){const a=Math.random()*Math.PI*2,s=130+Math.random()*200;
+    G.parts.push({x:px,y:py,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.55,ml:.55,sz:3,col:i%3===0?(r.cc||'#cc88ff'):'#f5c542'});}
+  addShake(6);SFX.atPos(px,py);if(SFX.gold)SFX.gold();
 
   // Spawn return portal after a brief dramatic pause
   setTimeout(()=>{
@@ -3199,15 +3426,16 @@ function checkUnlocks(){
   REALMS.forEach((r,i)=>{
     if(G.progress.unlocked.includes(r.id))return;
     if(i===0){
-      // Forsaken Province: needs hub crystals
+      // Forsaken Province: the 5 hub crystals are the opening tutorial gate
       if(G.progress.hubCrystals.filter(Boolean).length>=r.unlockCost){
         G.progress.unlocked.push(r.id);
         showMsg(`Forsaken Province is now accessible!`);
       }
     } else {
-      // Each realm unlocked by previous realm's crystals
+      // Every later realm unlocks by clearing the previous realm's boss (clear-to-advance,
+      // so the finale is always reachable by anyone who keeps winning — no farming wall)
       const prev=REALMS[i-1];
-      if((G.progress.crystals[prev.id]||0)>=r.unlockCost){
+      if(G.progress.rp[prev.id]?.bossDown){
         G.progress.unlocked.push(r.id);
         showMsg(`${r.name} is now accessible!`);
       }
@@ -3223,67 +3451,88 @@ function checkUnlocks(){
 // So "+10 stat" = +10 raw ATK | +42 raw MaxHP | +18 raw SPD — all priced at 1000g.
 // Healing is consumable (restores current HP only) and stays affordable.
 const BAR_TO_RAW={atk:1,maxhp:4.2,spd:1.82};
-function barUp(stat,bar){
+function barUp(stat,bar,pl){
+  pl=pl||G.p;
   const raw=Math.round(bar*BAR_TO_RAW[stat]);
-  if(stat==='atk')G.p.atk=Math.min(999,G.p.atk+raw);
-  else if(stat==='maxhp'){
-    G.p.maxHp=Math.min(999,G.p.maxHp+raw);
-    G.p.hp=Math.min(G.p.hp+raw,G.p.maxHp);
-  }
-  else if(stat==='spd')G.p.spd=Math.min(999,G.p.spd+raw);
+  statUp(stat,raw,pl);
 }
+// Flat permanent stat bump (used by crystal upgrades — each crystal = one small step)
+function statUp(stat,raw,pl){
+  pl=pl||G.p;
+  if(stat==='atk')pl.atk=Math.min(999,pl.atk+raw);
+  else if(stat==='maxhp'){pl.maxHp=Math.min(999,pl.maxHp+raw);pl.hp=Math.min(pl.hp+raw,pl.maxHp);}
+  else if(stat==='spd')pl.spd=Math.min(999,pl.spd+raw);
+  else if(stat==='rate')pl.rate=Math.min(99,(pl.rate||0)+raw);
+  else if(stat==='luck')pl.luck=Math.min(99,(pl.luck||0)+raw);
+}
+// cur:'gold' = spent during a run (consumables). cur:'crystal' = permanent growth, 1 ✦ each.
 const STAT_GROUPS=[
   {
-    key:'hp', label:'HP', col:'#cc3333',
+    key:'hp', label:'HP', col:'#cc3333', cur:'gold',
     val:()=>`${Math.floor(G.p.hp)} / ${G.p.maxHp}`,
     frac:()=>G.p.hp/Math.max(G.p.maxHp,1),
     ups:[
-      {lbl:'Heal +40', c:()=>100, f:()=>{G.p.hp=Math.min(G.p.hp+40,G.p.maxHp);}},
-      {lbl:'Heal +70', c:()=>200, f:()=>{G.p.hp=Math.min(G.p.hp+70,G.p.maxHp);}},
+      {lbl:'Heal +40', c:()=>100, f:(pl)=>{pl=pl||G.p;pl.hp=Math.min(pl.hp+40,pl.maxHp);}},
+      {lbl:'Heal +70', c:()=>200, f:(pl)=>{pl=pl||G.p;pl.hp=Math.min(pl.hp+70,pl.maxHp);}},
     ],
   },
   {
-    key:'maxhp', label:'Max HP', col:'#aa2222',
-    val:()=>Math.max(1,Math.min(99,Math.round((G.p.maxHp-85)/4.2))),
-    frac:()=>Math.min((G.p.maxHp-85)/313,1),
-    ups:[
-      {lbl:'+5',  c:()=>500,  f:()=>barUp('maxhp',5)},
-      {lbl:'+10', c:()=>1000, f:()=>barUp('maxhp',10)},
-      {lbl:'+20', c:()=>2000, f:()=>barUp('maxhp',20)},
-    ],
-  },
-  {
-    key:'atk', label:'ATK', col:'#4488ff',
-    val:()=>Math.max(1,Math.min(99,G.p.atk-15)),
-    frac:()=>Math.min((G.p.atk-15)/84,1),
-    ups:[
-      {lbl:'+5',  c:()=>500,  f:()=>barUp('atk',5)},
-      {lbl:'+10', c:()=>1000, f:()=>barUp('atk',10)},
-      {lbl:'+20', c:()=>2000, f:()=>barUp('atk',20)},
-    ],
-  },
-  {
-    key:'spd', label:'SPD', col:'#44cc88',
-    val:()=>Math.max(1,Math.min(99,Math.round((G.p.spd-130)/1.82))),
-    frac:()=>Math.min((G.p.spd-130)/170,1),
-    ups:[
-      {lbl:'+5',  c:()=>500,  f:()=>barUp('spd',5)},
-      {lbl:'+10', c:()=>1000, f:()=>barUp('spd',10)},
-      {lbl:'+20', c:()=>2000, f:()=>barUp('spd',20)},
-    ],
-  },
-  {
-    key:'lives', label:'LIVES', col:'#ff4444',
+    key:'lives', label:'LIVES', col:'#ff4444', cur:'gold',
     val:()=>'♥'.repeat(Math.max(0,G.p.lives||0))+'♡'.repeat(Math.max(0,3-(G.p.lives||0))),
     frac:()=>(G.p.lives||0)/3,
     ups:[
-      {lbl:'Extra Life ♥', c:()=>1000, f:()=>{if((G.p.lives||0)<3)G.p.lives=Math.min(3,(G.p.lives||0)+1);}},
+      {lbl:'Extra Life ♥', c:()=>1000, f:(pl)=>{pl=pl||G.p;if((pl.lives||0)<3)pl.lives=Math.min(3,(pl.lives||0)+1);}},
     ],
+  },
+  {
+    key:'familiar', label:'Companion', col:'#88ddff', cur:'gold', note:'Lasts one floor',
+    desc:'⚡ Wisp zaps foes · ◈ Magpie pulls loot · ✚ Warden heals you',
+    val:()=>{const f=G.p.familiar;return f?(FAM_META[f]?.name||f):'—';},
+    frac:()=>G.p.familiar?1:0,
+    ups:[
+      {lbl:'Wisp ⚡',   c:()=>1000, f:(pl)=>{(pl||G.p).familiar='wisp';},   dis:()=>G.p.familiar==='wisp',   tip:'Floating wisp — auto-zaps the nearest enemy on a short cooldown'},
+      {lbl:'Magpie ◈', c:()=>1000, f:(pl)=>{(pl||G.p).familiar='magpie';}, dis:()=>G.p.familiar==='magpie', tip:'Vacuums nearby gold, food and crystals toward you'},
+      {lbl:'Warden ✚', c:()=>1000, f:(pl)=>{(pl||G.p).familiar='warden';}, dis:()=>G.p.familiar==='warden', tip:'Slowly regenerates your health each second'},
+    ],
+  },
+  {
+    key:'atk', label:'ATK', col:'#4488ff', cur:'crystal',
+    val:()=>Math.max(1,Math.min(99,G.p.atk-15)),
+    frac:()=>Math.min((G.p.atk-15)/84,1),
+    ups:[{lbl:'+2 ATK', c:()=>1, f:(pl)=>statUp('atk',2,pl)}],
+  },
+  {
+    key:'maxhp', label:'Max HP', col:'#aa2222', cur:'crystal',
+    val:()=>Math.max(1,Math.min(99,Math.round((G.p.maxHp-85)/4.2))),
+    frac:()=>Math.min((G.p.maxHp-85)/313,1),
+    ups:[{lbl:'+8 HP', c:()=>1, f:(pl)=>statUp('maxhp',8,pl)}],
+  },
+  {
+    key:'spd', label:'SPD', col:'#44cc88', cur:'crystal',
+    val:()=>Math.max(1,Math.min(99,Math.round((G.p.spd-130)/1.82))),
+    frac:()=>Math.min((G.p.spd-130)/170,1),
+    ups:[{lbl:'+4 SPD', c:()=>1, f:(pl)=>statUp('spd',4,pl)}],
+  },
+  {
+    key:'rate', label:'Rate', col:'#ffaa33', cur:'crystal',
+    val:()=>G.p.rate||0,
+    frac:()=>Math.min((G.p.rate||0)/20,1),
+    ups:[{lbl:'+1 Rate', c:()=>1, f:(pl)=>statUp('rate',1,pl)}],
+  },
+  {
+    key:'luck', label:'Luck', col:'#66dd66', cur:'crystal',
+    val:()=>G.p.luck||0,
+    frac:()=>Math.min((G.p.luck||0)/25,1),
+    ups:[{lbl:'+1 Luck', c:()=>1, f:(pl)=>statUp('luck',1,pl)}],
   },
 ];
 
 function openShop(contText){
   const prev=MODE;MODE='shop';
+  // Familiars are one-floor consumables — they expire at every floor transition (the shop
+  // is the transition point, so clear here). Runs on host AND client (client gets the
+  // openShop RPC), keeping the per-player companion in sync.
+  G.p.familiar=null;
   if(MP.isHost&&MP.enabled)mpSend({type:'openShop',contText});
   const ov=document.getElementById('shopov');ov.classList.remove('hidden');
   refreshShopUI();
@@ -3298,6 +3547,7 @@ function openShop(contText){
     }
     if(shopAction==='hub'){returnHub();}
     else if(shopAction==='boss'){startBoss();}
+    else if(shopAction==='bossRushNext'){startBoss();}
     else if(shopAction==='nextlevel'){startLevel(G.curRealm,G.curLvNum);}
     else{returnHub();}
   };
@@ -3312,41 +3562,56 @@ function openShop(contText){
 
 function refreshShopUI(){
   const p=G.p;
-  document.getElementById('shopgold').textContent=`⚜ ${p.gold} gold`;
+  document.getElementById('shopgold').innerHTML=`<span style="color:#f5c542">⚜ ${p.gold} gold</span>&nbsp;&nbsp;<span style="color:#cc88ff">✦ ${p.crystals||0} crystals</span>`;
   const con=document.getElementById('shopitems');
-  con.innerHTML=STAT_GROUPS.map((g,gi)=>{
+  const sectionHdr=t=>`<div style="font-family:Cinzel,serif;font-size:9px;letter-spacing:.08em;color:#8a7fb0;margin:5px 0 1px;text-transform:uppercase">${t}</div>`;
+  let html='';
+  let lastCur=null;
+  STAT_GROUPS.forEach((g,gi)=>{
+    if(g.cur!==lastCur){
+      html+=sectionHdr(g.cur==='gold'?'⚜ Provisions (gold)':'✦ Permanent Power (crystals)');
+      lastCur=g.cur;
+    }
     const pct=Math.max(0,Math.min(100,g.frac()*100)).toFixed(1);
-    const btns=g.ups.map((u,ui)=>{const cost=u.c();return`
-      <button class="sbtn" id="sg${gi}_${ui}" ${p.gold<cost?'disabled':''}
-        style="font-size:10px;padding:5px 8px;line-height:1.3">
-        ${u.lbl}<br><span style="color:#f5c542;font-size:9px">${cost}g</span>
+    const bal=g.cur==='crystal'?(p.crystals||0):p.gold;
+    const sym=g.cur==='crystal'?'✦':'g', symCol=g.cur==='crystal'?'#cc88ff':'#f5c542';
+    const btns=g.ups.map((u,ui)=>{const cost=u.c();const owned=u.dis&&u.dis();return`
+      <button class="sbtn" id="sg${gi}_${ui}" ${(bal<cost||owned)?'disabled':''}
+        ${u.tip?`title="${u.tip}"`:''}
+        style="font-size:9.5px;padding:4px 7px;min-width:0">
+        ${u.lbl} <span style="color:${owned?'#6a6':symCol};font-size:8.5px">${owned?'·on':'·'+cost+sym}</span>
       </button>`;}).join('');
-    return `
-    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
-        <span style="font-family:Cinzel,serif;font-size:10px;color:#777;width:38px;flex-shrink:0">${g.label}</span>
-        <div style="flex:1;height:8px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">
+    html+=`
+    <div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-family:Cinzel,serif;font-size:10px;color:#777;width:46px;flex-shrink:0">${g.label}${g.note?`<br><span style="font-size:7.5px;color:#557;letter-spacing:0">${g.note}</span>`:''}</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${g.col};border-radius:2px;transition:width .35s"></div>
         </div>
-        <span style="font-family:Cinzel,serif;font-size:10px;color:#bbb;min-width:52px;text-align:right;flex-shrink:0">${g.val()}</span>
+        <span style="font-family:Cinzel,serif;font-size:10px;color:#bbb;min-width:44px;text-align:right;flex-shrink:0">${g.val()}</span>
       </div>
-      <div style="display:flex;gap:5px;justify-content:flex-end">${btns}</div>
+      ${g.desc?`<div style="font-size:7.5px;color:#667;margin-bottom:4px;line-height:1.35">${g.desc}</div>`:''}
+      <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap">${btns}</div>
     </div>`;
-  }).join('');
+  });
+  con.innerHTML=html;
   // Wire buttons
   STAT_GROUPS.forEach((g,gi)=>{
     g.ups.forEach((u,ui)=>{
       const btn=document.getElementById(`sg${gi}_${ui}`);
       if(btn) btn.addEventListener('click',()=>{
-        const cost=u.c();
-        if(G.p.gold<cost)return;
-        // Each player spends from their own wallet — pickups are shared, purchases are individual
-        G.p.gold-=cost;
+        const cost=u.c(), cur=g.cur;
+        if(u.dis&&u.dis())return;
+        const bal=cur==='crystal'?(G.p.crystals||0):G.p.gold;
+        if(bal<cost)return;
+        // Each player spends from their own balance — pickups are shared, purchases individual
+        if(cur==='crystal')G.p.crystals-=cost; else G.p.gold-=cost;
+        u.f(G.p);
         if(MP.enabled&&!MP.isHost){
-          // Client: notify host to deduct from this client's slot authoritatively
-          mpSend({type:'shopBuy',cost,playerId:MP.playerId});
+          // Client: tell the host WHICH upgrade + currency so it applies authoritatively
+          mpSend({type:'shopBuy',cost,cur,gi,ui,playerId:MP.playerId});
         }
-        u.f();refreshShopUI();
+        refreshShopUI();
       });
     });
   });
@@ -3357,7 +3622,7 @@ function returnHub(){
   MODE='hub';
   // Clear all transient level state
   G.projs=[];G.parts=[];G.ftexts=[];G.dyingEnemies=[];G.ambientParts=[];
-  G.lv=null;G.hubNear=null;G.curRealm=null;G.deathPile=null;G._preMode=null;
+  G.lv=null;G.hubNear=null;G.curRealm=null;G.deathPile=null;G._preMode=null;G.bossRush=null;
   G.hurtFlash=0;G.hitStop=0;G.shakeT=0;G.killChain=0;
   G.p.hp=Math.max(G.p.hp,1); // don't die on arrival
   G.p.invuln=0;G.p.turbo=0;G.p.item=null;G.p.itemTimer=0;G.p.kbTimer=0;
@@ -3375,6 +3640,88 @@ function returnHub(){
 // PLAYER UPDATE
 // ═══════════════════════════════════════
 const ATKCD=.42,ATKDUR=.2,PROJSPD=285,PROJRANGE=TL*8;
+// ── RATE (attack speed) & LUCK (crit) — borrowed ARPG stat axes, bought with crystals ──
+// Rate shortens the attack cooldown; each point ≈ 6% faster, capped at 2.5× speed.
+const RATE_PER=0.06, RATE_CDFLOOR=0.4;
+function effAtkCd(p,baseCd){return Math.max(baseCd*RATE_CDFLOOR, baseCd/(1+(p?.rate||0)*RATE_PER));}
+// Luck gives a chance for a critical hit (×1.8 damage); each point +2%, capped at 50%.
+const CRIT_PER_LUCK=0.02, CRIT_CAP=0.5, CRIT_MUL=1.8;
+function rollCrit(p){return Math.random()<Math.min(CRIT_CAP,(p?.luck||0)*CRIT_PER_LUCK);}
+function critFX(x,y){
+  addFT('CRIT!',x,y-TL*.45,'#ffe04a');
+  for(let i=0;i<7;i++){const a=Math.random()*Math.PI*2;
+    G.parts.push({x,y,vx:Math.cos(a)*170,vy:Math.sin(a)*170,life:.22,ml:.22,sz:3,col:'#ffe04a'});}
+}
+
+// ── FAMILIARS — gold-bought companions (GDL-style) that float beside a hero and give a
+// passive boon for the rest of the run. One slot per player; buying another swaps it.
+//   wisp   → zaps the nearest foe on a cooldown (offense)
+//   magpie → vacuums nearby gold/food/crystal pickups toward you (utility)
+//   warden → slow passive health regeneration (defense)
+const FAM_R=TL*0.95, FAM_WISP_CD=1.15, FAM_WISP_RANGE=TL*6, FAM_MAG_R=TL*3.3, FAM_REGEN=4.5;
+const FAM_META={wisp:{name:'Wisp',col:'#88ddff'},magpie:{name:'Magpie',col:'#ffcc55'},warden:{name:'Warden',col:'#88ffaa'}};
+function famOrbit(pl,idx){
+  const ang=G.t*1.6+idx*2.1;
+  pl._famX=pl.x+Math.cos(ang)*FAM_R;
+  pl._famY=pl.y+Math.sin(ang)*FAM_R-TL*.15+Math.sin(G.t*3+idx)*2;
+  pl._famAng=ang;
+}
+function famWispZap(pl,dt){
+  pl._famCd=(pl._famCd||0)-dt;
+  if(pl._famCd>0)return;
+  const ox=pl._famX??pl.x, oy=pl._famY??pl.y;
+  const e=findNearest(G.lv.enemies||[],{x:ox,y:oy},FAM_WISP_RANGE);
+  if(!e&&!(G.lv.boss?.active))return;
+  const tgt=e||G.lv.boss;
+  pl._famCd=FAM_WISP_CD;
+  const dx=tgt.x-ox,dy=tgt.y-oy,dl=Math.hypot(dx,dy)||1;
+  const spd=PROJSPD*0.9;
+  G.projs.push({x:ox,y:oy,vx:dx/dl*spd,vy:dy/dl*spd,life:FAM_WISP_RANGE/spd,
+    col:'#88ddff',trail:[],isTurbo:false,_local:true,_fam:1,sz:3.5,
+    atk:Math.max(2,Math.floor((pl.atk||18)*0.45))});
+  for(let i=0;i<3;i++){const a=Math.atan2(dy,dx)+(Math.random()-.5);
+    G.parts.push({x:ox,y:oy,vx:Math.cos(a)*90,vy:Math.sin(a)*90,life:.12,ml:.12,sz:2,col:'#aef'});}
+  SFX.atPos(ox,oy);
+}
+function famMagpiePull(pl,dt){
+  (G.lv.items||[]).forEach(it=>{
+    if(it.collected)return;
+    const dx=pl.x-it.x,dy=pl.y-it.y,dl=Math.hypot(dx,dy);
+    if(dl<FAM_MAG_R&&dl>2){const step=Math.min(dl,TL*5.5*dt);it.x+=dx/dl*step;it.y+=dy/dl*step;}
+  });
+}
+function updateFamiliars(dt){
+  if(!G.lv)return;
+  // Local player: keep orbit fresh + fire the wisp (spawns a local proj like a normal shot,
+  // so damage + multiplayer sync ride the existing projectile path).
+  const lp=G.p;
+  if(lp.familiar){famOrbit(lp,G.localIdx||0);if(lp.familiar==='wisp')famWispZap(lp,dt);}
+  // Host-authoritative boons (regen / pickup magnet) for every active player.
+  if(!MP.enabled||MP.isHost){
+    let i=0;
+    (G.players||[]).forEach(pl=>{
+      const idx=i++;
+      if(!pl||pl.hp<=0||!pl.familiar)return;
+      if(pl!==lp)famOrbit(pl,idx);
+      if(pl.familiar==='warden')pl.hp=Math.min(pl.maxHp,(pl.hp||0)+FAM_REGEN*dt);
+      else if(pl.familiar==='magpie')famMagpiePull(pl,dt);
+    });
+  }
+}
+function drawFamiliar(pl){
+  if(!pl||!pl.familiar)return;
+  if(pl._famX===undefined)famOrbit(pl,0);
+  const x=pl._famX,y=pl._famY,meta=FAM_META[pl.familiar]||FAM_META.wisp;
+  const pulse=.7+.3*Math.sin(G.t*4+(pl._famAng||0));
+  ctx.save();
+  ctx.globalAlpha=.5*pulse;ctx.fillStyle=meta.col;
+  ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=1;ctx.fillStyle=meta.col;
+  ctx.beginPath();ctx.arc(x,y,3.4,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=.85;ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.arc(x-1,y-1,1.3,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
 
 function updatePlayer(dt){
   const p=G.p;if(!G.lv)return;
@@ -3434,6 +3781,7 @@ function updatePlayer(dt){
       if(curr<prev&&curr>0)addFT(curr+'',bp.x,bp.y-TL*1.6,'#d4a853');
       if(G.lv.bossPortalTimer<3.5)return;
       G.lv.bossPortal=null;
+      if(G.bossRush){bossRushAdvance();return;}
       const r=G.curRealm;
       const fs=G.floorStats||{kills:0,gold:0,crystals:0,t:G.t};
       const kills=G.p.kills-fs.kills;
@@ -3476,7 +3824,7 @@ function updatePlayer(dt){
       let diff=toAngle-moveAngle;
       while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
       if(Math.abs(diff)<Math.PI*.55){
-        p.attacking=true;p.atkProg=0;p.atkTimer=ATKCD;
+        p.attacking=true;p.atkProg=0;p.atkTimer=effAtkCd(p,ATKCD);
         doMelee(p,autoTarget);
       }
     } else {
@@ -3489,7 +3837,7 @@ function updatePlayer(dt){
         return Math.abs(diff)<Math.PI*.55;
       });
       if(autoSpawner){
-        p.attacking=true;p.atkProg=0;p.atkTimer=ATKCD;
+        p.attacking=true;p.atkProg=0;p.atkTimer=effAtkCd(p,ATKCD);
         hitSpawner(autoSpawner);lungeToward(p,autoSpawner);
         spawnP(p.x,p.y,'#d0e8ff',6);
       }
@@ -3500,7 +3848,7 @@ function updatePlayer(dt){
   // Range is class-aware — wizards have a much smaller melee window, so they
   // default to ranged unless an enemy is right on top of them.
   if(G.inp.atk&&p.atkTimer<=0&&!p.attacking){
-    p.attacking=true;p.atkProg=0;p.atkTimer=ATKCD;
+    p.attacking=true;p.atkProg=0;p.atkTimer=effAtkCd(p,ATKCD);
     const meleeR=meleeProfile(p).range;
     const near=findNearest(G.lv.enemies,p,meleeR);
     if(near){
@@ -3656,6 +4004,7 @@ function updatePlayer(dt){
     if(!allPlayers.includes(p))allPlayers.unshift(p);
   G.lv.items=G.lv.items.filter(item=>{
     if(item.hidden)return true;
+    if(item._drop&&(G.t-(item._t0||0))<(item._dur||0))return true; // still arcing — not yet collectible
     // Find any player within pickup range
     const picker=allPlayers.find(pl=>dist(pl,item)<=TL*.65);
     if(!picker){if(item._keyMsg)item._keyMsg=false;return true;}
@@ -3664,10 +4013,9 @@ function updatePlayer(dt){
       addFT('+'+item.val+'g',item.x,item.y,'#f5c542');SFX.gold();
     }
     else if(item.type==='crystal'){
-      const rid=typeof item.realm==='string'?item.realm:item.realm?.id||G.curRealm?.id||'forsaken';
-      G.progress.crystals[rid]=(G.progress.crystals[rid]||0)+1;
+      allPlayers.forEach(pl=>{pl.crystals=(pl.crystals||0)+1;});
       addFT('+1 ✦',item.x,item.y,G.curRealm?.cc||'#cc88ff');
-      SFX.crystal();checkUnlocks();
+      SFX.crystal();
     }
     else if(item.type==='food'){
       // Heal all alive players
@@ -3806,8 +4154,10 @@ function throwBomb(p,tx,ty,opts={}){
 }
 
 function fireProj(p){
-  const atkCd=p.item==='rapid_fire'?(ATKCD*.45):ATKCD;
+  const baseCd=p.item==='rapid_fire'?(ATKCD*.45):ATKCD;
+  const atkCd=effAtkCd(p,baseCd);
   p.atkTimer=atkCd;
+  const crit=rollCrit(p), critMul=crit?CRIT_MUL:1;
   // Jester throws bombs instead of arrows. Items still apply:
   //   • fury → 1.8× bomb damage (matches knight/wizard fury bonus)
   //   • triple_shot → throws 3 bombs in a spread
@@ -3817,7 +4167,8 @@ function fireProj(p){
     p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
     SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
     const furyMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
-    const bombAtk=p.atk*1.5*furyMul;
+    const bombAtk=p.atk*1.5*furyMul*critMul;
+    if(crit)critFX(p.x,p.y);
     const a=Math.atan2(aim.dy,aim.dx);
     const triple=p.item==='triple_shot';
     // MP client: continuous projectile-sync breaks fused bombs (the host re-creates them
@@ -3853,9 +4204,9 @@ function fireProj(p){
       x:p.x+aim.dx*TL*.5,y:p.y+aim.dy*TL*.5,
       vx:aim.dx*hspd,vy:aim.dy*hspd,
       life:(PROJRANGE*0.7)/hspd,
-      col:p.item==='fury'?'#ff6622':'#d9a066',trail:[],isTurbo:false,
-      _hammer:1,_spin:0,
-      atk:Math.floor((p.atk*1.6+rand(0,Math.floor(p.atk*.3)))*furyMul),
+      col:p.item==='fury'?'#ff6622':'#d9a066',trail:[],isTurbo:false,_local:true,
+      _hammer:1,_spin:0,_crit:crit,
+      atk:Math.floor((p.atk*1.6+rand(0,Math.floor(p.atk*.3)))*furyMul*critMul),
     });
     return;
   }
@@ -3875,12 +4226,12 @@ function fireProj(p){
     const a=Math.atan2(aim.dy,aim.dx);
     [-0.32,0,0.32].forEach(off=>{
       const ang=a+off;
-      G.projs.push({...base,x:px,y:py,_local:true,vx:Math.cos(ang)*projSpd,vy:Math.sin(ang)*projSpd,
-        atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
+      G.projs.push({...base,x:px,y:py,_local:true,_crit:crit,vx:Math.cos(ang)*projSpd,vy:Math.sin(ang)*projSpd,
+        atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul*critMul)});
     });
   } else {
-    G.projs.push({...base,x:px,y:py,_local:true,vx:aim.dx*projSpd,vy:aim.dy*projSpd,
-      atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul)});
+    G.projs.push({...base,x:px,y:py,_local:true,_crit:crit,vx:aim.dx*projSpd,vy:aim.dy*projSpd,
+      atk:Math.floor((p.atk+rand(0,Math.floor(p.atk*.25)))*dmgMul*critMul)});
   }
   // Shot sparks — purple/cyan for wizard, blue for others
   const sparkCol=isWizard?'#cc88ff':(p.item==='fury'?'#ff8844':'#88ccff');
@@ -3932,9 +4283,12 @@ function doMelee(p,target){
   if(!hasLOS(p.x,p.y,target.x,target.y)){return;}
   const prof=meleeProfile(p);
   const furyMul=(G.p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
-  const dmg=Math.floor((p.atk*2.4*prof.dmgMul+rand(0,Math.floor(p.atk*.35*prof.dmgMul)))*furyMul);
+  const crit=rollCrit(p);
+  let dmg=Math.floor((p.atk*2.4*prof.dmgMul+rand(0,Math.floor(p.atk*.35*prof.dmgMul)))*furyMul);
+  if(crit)dmg=Math.floor(dmg*CRIT_MUL);
   const willKill=target.hp-dmg<=0;
   hitEnemy(target,dmg);
+  if(crit)critFX(target.x,target.y);
   SFX.atPos(p.x,p.y);SFX.swing();
   SFX.atPos(target.x,target.y);SFX.hit(target.type==='golem'||target.type==='grunt_heavy');
   G.hitStop=Math.max(G.hitStop,willKill?3:1);
@@ -4470,6 +4824,7 @@ function updateProjs(dt){
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){
           hitEnemy(e,pr.atk);
+          if(pr._crit)critFX(e.x,e.y);
           if(owner)owner.turbo=Math.min(owner.turboMax2||200,(owner.turbo||0)+2);
           spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
         }
@@ -4593,12 +4948,6 @@ function hitSpawner(sp){
     SFX.atPos(sp.x,sp.y);SFX.boom();
     eachPlayer(pl=>{pl.gold=(pl.gold||0)+rand(5,12);pl.xp=(pl.xp||0)+15;});
     spawnP(sp.x,sp.y,'#ff8800',14);
-    // Drop crystals on spawner kill
-    const nc=rand(1,2);
-    for(let c=0;c<nc;c++){
-      const a=Math.random()*Math.PI*2;
-      G.lv.items.push({type:'crystal',x:sp.x+Math.cos(a)*TL*.6,y:sp.y+Math.sin(a)*TL*.6,realm:sp.realm.id,bob:Math.random()*Math.PI*2});
-    }
     checkLevelUp();
   }
 }
@@ -4641,19 +4990,24 @@ function playerInCorridor(p){
 // Each cell stores the direction to step FROM that tile TOWARD the player.
 // All enemies sample this to navigate around walls naturally.
 // ── HAZARD ZONES (lingering ground fire from lobber/elite shots) ──
-function createHazard(x,y,col,atk,radius){
+function createHazard(x,y,col,atk,radius,dur,band,bandW,bandH){
   if(!G.lv)return;
   if(!G.lv.hazards)G.lv.hazards=[];
-  G.lv.hazards.push({x,y,col,atk,r:radius||TL*1.4,timer:3,maxTimer:3,ph:Math.random()*Math.PI*2});
+  const t=dur||3;
+  G.lv.hazards.push({x,y,col,atk,r:radius||TL*1.4,timer:t,maxTimer:t,ph:Math.random()*Math.PI*2,
+    band:!!band,bandW:bandW||0,bandH:bandH||0});
 }
 
 function updateHazards(dt){
   if(!G.lv?.hazards)return;
   G.lv.hazards=G.lv.hazards.filter(h=>{
     h.timer-=dt;
+    const inHaz=h.band
+      ? (o)=>Math.abs(o.x-h.x)<=h.bandW&&Math.abs(o.y-h.y)<=h.bandH
+      : (o)=>dist(o,h)<h.r;
     // Damage all players in hazard
     eachPlayer(p=>{
-      if(dist(p,h)<h.r&&p.invuln<=0&&p.hp>0){
+      if(inHaz(p)&&p.invuln<=0&&p.hp>0){
         p.hp-=h.atk*dt*2;
         if(p===G.p){G.hurtFlash=Math.min(1,G.hurtFlash+.3*dt);}
         if(p.hp<=0)onDeath(p);
@@ -4662,7 +5016,7 @@ function updateHazards(dt){
     // Damage enemies in hazard — tick at 0.8× player rate, rewards positioning
     G.lv.enemies.forEach(e=>{
       if(e.hidden||e.staggerResist>0)return;
-      if(dist(e,h)<h.r){
+      if(inHaz(e)){
         const dmg=h.atk*dt*.8;
         e.hp-=dmg;e.hitFlash=Math.max(e.hitFlash,.08);
         if(e.hp<=0){
@@ -4680,6 +5034,17 @@ function drawHazards(){
   G.lv.hazards.forEach(h=>{
     const f=h.timer/(h.maxTimer||h.timer||1);
     const pulse=.7+.3*Math.sin(G.t*6+(h.ph||0));
+    if(h.band){
+      // Fire row — filled strip with a flickering edge
+      ctx.globalAlpha=f*.5*pulse;ctx.fillStyle=h.col;ctx.shadowColor=h.col;ctx.shadowBlur=20*f;
+      ctx.fillRect(h.x-h.bandW,h.y-h.bandH,h.bandW*2,h.bandH*2);
+      ctx.globalAlpha=f*.7;ctx.strokeStyle='#ffdd66';ctx.lineWidth=2;
+      ctx.strokeRect(h.x-h.bandW,h.y-h.bandH,h.bandW*2,h.bandH*2);
+      // flame licks
+      ctx.globalAlpha=f*.5;ctx.fillStyle='#ffcc44';
+      for(let i=0;i<6;i++){const fx=h.x-h.bandW+Math.random()*h.bandW*2;ctx.fillRect(fx,h.y-h.bandH-3,3,4+Math.random()*4);}
+      ctx.shadowBlur=0;ctx.globalAlpha=1;return;
+    }
     // Scorched ground fill
     ctx.globalAlpha=f*.45*pulse;ctx.fillStyle=h.col;
     ctx.shadowColor=h.col;ctx.shadowBlur=18*f;
@@ -4705,10 +5070,10 @@ function applyElite(e){
 }
 
 // ── BOSS WARNING MARKERS — telegraph → hazard ──────────────────
-function addWarning(x,y,{delay=1.5,r=TL*1.3,atk=10,hazardR,hazardDur=2.5,col='#ff4400'}={}){
+function addWarning(x,y,{delay=1.5,r=TL*1.3,atk=10,hazardR,hazardDur=2.5,col='#ff4400',band=false,bandW=0,bandH=0}={}){
   if(!G.lv)return;
   if(!G.lv.warnings)G.lv.warnings=[];
-  G.lv.warnings.push({x,y,timer:delay,maxTimer:delay,r,atk,hazardR:hazardR||r,hazardDur,col});}
+  G.lv.warnings.push({x,y,timer:delay,maxTimer:delay,r,atk,hazardR:hazardR||r,hazardDur,col,band,bandW,bandH});}
 
 function updateWarnings(dt){
   if(!G.lv?.warnings)return;
@@ -4717,7 +5082,7 @@ function updateWarnings(dt){
     w.timer-=dt;
     if(w.timer<=0){
       // Only the host spawns the actual damage hazard; clients just expire the visual.
-      if(!isClient){if(!w._meteor)createHazard(w.x,w.y,w.col,w.atk,w.hazardR);addShake(4);}
+      if(!isClient){if(!w._meteor)createHazard(w.x,w.y,w.col,w.atk,w.hazardR,w.band?w.hazardDur:undefined,w.band,w.bandW,w.bandH);addShake(4);}
       spawnP(w.x,w.y,w.col,12);
       return false;
     }
@@ -4731,6 +5096,18 @@ function drawWarnings(){
     const f=1-w.timer/w.maxTimer; // 0→1 as countdown progresses
     const spd=6+f*14;
     const pulse=Math.sin(G.t*spd+w.x)*.35+.65;
+    if(w.band){
+      // Telegraphed fire row — hatched strip the player must move out of
+      ctx.shadowColor=w.col;ctx.shadowBlur=10+f*16;
+      ctx.globalAlpha=(0.08+f*.18)*pulse;ctx.fillStyle=w.col;
+      ctx.fillRect(w.x-w.bandW,w.y-w.bandH,w.bandW*2,w.bandH*2);
+      ctx.globalAlpha=(.45+f*.45)*pulse;ctx.strokeStyle=w.col;ctx.lineWidth=2+f*2;
+      ctx.strokeRect(w.x-w.bandW,w.y-w.bandH,w.bandW*2,w.bandH*2);
+      // diagonal hazard hatching
+      ctx.globalAlpha=(.25+f*.3)*pulse;ctx.lineWidth=1.5;
+      for(let hx=w.x-w.bandW;hx<w.x+w.bandW;hx+=TL){ctx.beginPath();ctx.moveTo(hx,w.y-w.bandH);ctx.lineTo(hx+w.bandH*2,w.y+w.bandH);ctx.stroke();}
+      ctx.shadowBlur=0;ctx.globalAlpha=1;return;
+    }
     const radius=w.r*(.5+f*.5);
     ctx.shadowColor=w.col;ctx.shadowBlur=8+f*14;
     // Fill
@@ -5019,11 +5396,17 @@ function mpHandleMessage(d){
       mpUpdateReadyList();mpCheckAllReady();return;
     }
     if(d.type==='shopBuy'&&typeof d.cost==='number'&&d.cost>=0){
-      // Client purchased an upgrade — deduct from THAT client's wallet only (purchases are individual)
+      // Client purchased an upgrade — deduct from THAT client's balance AND apply the effect
+      // to their authoritative slot (so heal/maxhp/lives/stats stick through the next broadcast).
       const ri=MP.remoteInputs?.[d.playerId];
       if(ri){
         const rp=G.players[ri.playerIdx];
-        if(rp)rp.gold=Math.max(0,(rp.gold||0)-d.cost);
+        if(rp){
+          if(d.cur==='crystal')rp.crystals=Math.max(0,(rp.crystals||0)-d.cost);
+          else rp.gold=Math.max(0,(rp.gold||0)-d.cost);
+          const grp=STAT_GROUPS[d.gi];const up=grp&&grp.ups[d.ui];
+          if(up&&typeof up.f==='function')up.f(rp);
+        }
       }
       return;
     }
@@ -5214,10 +5597,13 @@ function mpHandleMessage(d){
         if(d.playerMode)rp.playerMode=d.playerMode;
         if(typeof d.atk==='number')rp.atk=d.atk;
         if(typeof d.maxHp==='number')rp.maxHp=d.maxHp;
+        if(typeof d.rate==='number')rp.rate=d.rate;
+        if(typeof d.luck==='number')rp.luck=d.luck;
+        if('familiar' in d)rp.familiar=d.familiar;
         // Rising edge of attacking → process client's melee swing against nearest enemy
         if(d.attacking&&!rp.attacking&&(rp.atkTimer||0)<=0){
           SFX.atPos(rp.x,rp.y);SFX.swing();
-          rp.atkTimer=ATKCD; // enforce cooldown on host to prevent attack spam
+          rp.atkTimer=effAtkCd(rp,ATKCD); // enforce cooldown on host to prevent attack spam
           if(G.lv?.enemies&&(rp.playerMode==='level'||rp.playerMode==='boss')){
             const near=findNearest(G.lv.enemies,rp,TL*1.6);
             if(near)doMelee(rp,near);
@@ -5322,7 +5708,7 @@ function mpSendInput(){
     atkAngle:G.p.atkAngle||0,
     charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,
     playerMode:MODE,
-    atk:G.p.atk||18,maxHp:G.p.maxHp||100,
+    atk:G.p.atk||18,maxHp:G.p.maxHp||100,rate:G.p.rate||0,luck:G.p.luck||0,familiar:G.p.familiar||null,
     projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
       vx:Math.round(pr.vx),vy:Math.round(pr.vy),
@@ -5352,7 +5738,7 @@ function createRemotePlayer(peerId,playerIdx,startX,startY){
     facing:{x:1,y:0},charPrimary:col.primary,charAccent:col.accent,
     item:null,itemTimer:0,turbo:0,turboMax2:200,
     attacking:false,atkProg:0,atkAngle:0,
-    atk:18,spd:160,gold:0,keys:0,xp:0,kills:0,level:1,lives:3,
+    atk:18,spd:160,gold:0,crystals:0,rate:0,luck:0,familiar:null,keys:0,xp:0,kills:0,level:1,lives:3,
     kbTimer:0,kbVx:0,kbVy:0,atkTimer:0,
     upgrades:{maxhp:0,atk:0,spd:0,turbo:0},
     _peerId:peerId,_remote:true,_playerIdx:playerIdx};
@@ -5406,7 +5792,7 @@ function mpBroadcastState(){
     players:G.players.map(p=>p?{
       x:Math.round(p.x),y:Math.round(p.y),hp:p.hp,maxHp:p.maxHp,invuln:p.invuln,
       facingX:p.facing?.x||1,facingY:p.facing?.y||0,
-      turbo:p.turbo||0,item:p.item,itemTimer:p.itemTimer||0,gold:p.gold||0,keys:p.keys||0,
+      turbo:p.turbo||0,item:p.item,itemTimer:p.itemTimer||0,gold:p.gold||0,crystals:p.crystals||0,familiar:p.familiar||null,keys:p.keys||0,
       level:p.level||1,xp:p.xp||0,xpNext:p.xpNext||100,kills:p.kills||0,lives:p.lives===undefined?3:p.lives,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
       playerMode:p===G.p?MODE:p.playerMode,
@@ -5433,8 +5819,8 @@ function mpBroadcastState(){
   if(G._mpDeaths?.length)payload.deaths=G._mpDeaths;
   if(G._mpRespawns?.length)payload.respawns=G._mpRespawns;
   if(G._mpMapUpd?.length)payload.mapUpd=G._mpMapUpd;
-  if(G.lv?.warnings?.length)payload.warns=G.lv.warnings.map(w=>[Math.round(w.x),Math.round(w.y),+w.timer.toFixed(2),+w.maxTimer.toFixed(2),Math.round(w.r),w.col]);
-  if(G.lv?.hazards?.length)payload.hzds=G.lv.hazards.map(h=>[Math.round(h.x),Math.round(h.y),Math.round(h.r),+h.timer.toFixed(2),+(h.maxTimer||h.timer).toFixed(2),h.col||'#ff6600']);
+  if(G.lv?.warnings?.length)payload.warns=G.lv.warnings.map(w=>[Math.round(w.x),Math.round(w.y),+w.timer.toFixed(2),+w.maxTimer.toFixed(2),Math.round(w.r),w.col,w.band?1:0,Math.round(w.bandW||0),Math.round(w.bandH||0)]);
+  if(G.lv?.hazards?.length)payload.hzds=G.lv.hazards.map(h=>[Math.round(h.x),Math.round(h.y),Math.round(h.r),+h.timer.toFixed(2),+(h.maxTimer||h.timer).toFixed(2),h.col||'#ff6600',h.band?1:0,Math.round(h.bandW||0),Math.round(h.bandH||0)]);
   if(G.lv?.lichTether)payload.tether=[Math.round(G.lv.lichTether.bx),Math.round(G.lv.lichTether.by),Math.round(G.lv.lichTether.px),Math.round(G.lv.lichTether.py),G.lv.lichTether.broken?1:0,G.lv.lichTether.forming?1:0];
   if(G.lv?.bossPortal)payload.bp=[Math.round(G.lv.bossPortal.x),Math.round(G.lv.bossPortal.y),+(G.lv.bossPortalTimer||0).toFixed(2)];
   // In boss mode, always include boss field (null or object) so client cleans up after death
@@ -5525,10 +5911,10 @@ function mpApplyState(data){
   // Boss telegraphs (warnings) and active damage zones (hazards) — render on client
   if(!MP.isHost&&G.lv){
     if(data.warns){
-      G.lv.warnings=data.warns.map(w=>({x:w[0],y:w[1],timer:w[2],maxTimer:w[3],r:w[4],col:w[5],atk:0,hazardR:w[4]}));
+      G.lv.warnings=data.warns.map(w=>({x:w[0],y:w[1],timer:w[2],maxTimer:w[3],r:w[4],col:w[5],atk:0,hazardR:w[4],band:!!w[6],bandW:w[7]||0,bandH:w[8]||0}));
     }
     if(data.hzds){
-      G.lv.hazards=data.hzds.map(h=>({x:h[0],y:h[1],r:h[2],timer:h[3],maxTimer:h[4],col:h[5],atk:0,ph:h[0]+h[1]}));
+      G.lv.hazards=data.hzds.map(h=>({x:h[0],y:h[1],r:h[2],timer:h[3],maxTimer:h[4],col:h[5],atk:0,ph:h[0]+h[1],band:!!h[6],bandW:h[7]||0,bandH:h[8]||0}));
     }
     if('tether' in data){
       G.lv.lichTether=data.tether?{bx:data.tether[0],by:data.tether[1],px:data.tether[2],py:data.tether[3],broken:!!data.tether[4],forming:!!data.tether[5]}:null;
@@ -5554,18 +5940,6 @@ function mpApplyState(data){
     if('bp' in data){
       if(data.bp){G.lv.bossPortal={x:data.bp[0],y:data.bp[1]};G.lv.bossPortalTimer=data.bp[2];}
       else if(G.lv.bossPortal){G.lv.bossPortal=null;G.lv.bossPortalTimer=0;}
-    }
-    // Crystal progress for current realm — host authoritative, both view team total
-    if(typeof data.crystals==='number'&&G.curRealm&&G.progress?.crystals){
-      const before=G.progress.crystals[G.curRealm.id]||0;
-      if(data.crystals>before){
-        G.progress.crystals[G.curRealm.id]=data.crystals;
-        // Trigger unlock check + FX feedback for the gain
-        if(SFX.crystal&&before<data.crystals)SFX.crystal();
-        checkUnlocks();
-      } else if(data.crystals!==before){
-        G.progress.crystals[G.curRealm.id]=data.crystals;
-      }
     }
   }
   // Boss state sync — host authoritative, client renders
@@ -5764,6 +6138,8 @@ function mpApplyState(data){
         if(typeof snap.invuln==='number')G.p.invuln=snap.invuln;
         if(typeof snap.turbo==='number')G.p.turbo=snap.turbo;
         if(typeof snap.gold==='number')G.p.gold=snap.gold;
+        if(typeof snap.crystals==='number')G.p.crystals=snap.crystals;
+        if('familiar' in snap)G.p.familiar=snap.familiar;
         if(typeof snap.keys==='number')G.p.keys=snap.keys;
         if(snap.item!==undefined)G.p.item=snap.item;
         if(typeof snap.itemTimer==='number')G.p.itemTimer=snap.itemTimer;
@@ -5789,6 +6165,7 @@ function mpApplyState(data){
     if(snap.charPrimary)rp.charPrimary=snap.charPrimary;
     if(snap.charAccent)rp.charAccent=snap.charAccent;
     rp.turbo=snap.turbo;rp.item=snap.item;
+    if('familiar' in snap)rp.familiar=snap.familiar;
     if(snap.attacking&&!rp.attacking){SFX.atPos(rp.x,rp.y);SFX.swing();}
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
     rp.playerMode=snap.playerMode||'hub';
@@ -7228,7 +7605,7 @@ document.getElementById('drest').addEventListener('click',()=>{
   const _rc=CHAR_COLORS.find(c=>c.id===selectedColor)||CHAR_COLORS[1];
   G.p.charPrimary=_rc.primary;G.p.charAccent=_rc.accent;G.p.charColor=_rc.id;
   returnHub();
-  showMsg('You return to Sumner\'s Tower…');
+  showMsg('You return to The Gilded Gauntlet…');
 });
 
 // Full restart — wipes everything
@@ -7271,8 +7648,12 @@ function updCam(dt){
   // Look-ahead: camera creeps toward movement direction so you see more of where you're going
   const lx=(G.inp.dx||0)*TL*1.0, ly=(G.inp.dy||0)*TL*1.0;
   if(MODE==='hub'){
-    const tx=clamp(p.x-cv.width/2+lx,0,Math.max(0,HW*TL-cv.width));
-    const ty=clamp(p.y-cv.height/2+ly,0,Math.max(0,HH*TL-cv.height));
+    const Z=CAMZOOM;
+    const hvw=cv.width/(2*Z),hvh=cv.height/(2*Z),allow=TL*1.5;
+    const minX=-allow-cv.width/2+hvw, maxX=HW*TL+allow-cv.width/2-hvw;
+    const minY=-allow-cv.height/2+hvh, maxY=HH*TL+allow-cv.height/2-hvh;
+    const tx=clamp(p.x-cv.width/2+lx,Math.min(minX,maxX),Math.max(minX,maxX));
+    const ty=clamp(p.y-cv.height/2+ly,Math.min(minY,maxY),Math.max(minY,maxY));
     G.cam.x=lerp(G.cam.x,tx,5*dt);
     G.cam.y=lerp(G.cam.y,ty,5*dt);
   } else if(MODE==='level'||MODE==='boss'){
@@ -7496,6 +7877,7 @@ function renderLevel(){
   drawEnemies2();drawDyingEnemies();drawProjs();
   G.players.forEach(rp=>{if(rp&&rp!==G.p&&(rp.playerMode==='level'||rp.playerMode==='boss'))drawRemotePlayer(rp);});
   drawPlayer2();drawParts();
+  eachPlayer(pl=>drawFamiliar(pl));
   if(MODE==='boss'&&G.lv.boss)drawBoss();
   // Soul tether beam (Lich)
   if(G.lv?.lichTether){
@@ -8436,7 +8818,16 @@ function drawItems2(){
     if(item.hidden)return; // behind an unbroken secret wall
     if(item.x<cx-margin||item.x>cx+cw+margin||item.y<cy-margin||item.y>cy+ch+margin)return;
     const bob=Math.sin(G.t*2.5+item.bob)*3;
-    ctx.save();ctx.translate(item.x,item.y+bob);
+    let rx=item.x, ry=item.y+bob;
+    if(item._drop){
+      const p=Math.min(1,(G.t-(item._t0||0))/(item._dur||1));
+      if(p<1){
+        const e=1-(1-p)*(1-p); // easeOut toward landing spot
+        rx=item._sx+(item.x-item._sx)*e;
+        ry=item._sy+(item.y-item._sy)*e-Math.sin(p*Math.PI)*(item._pop||0); // up-then-down arc
+      }
+    }
+    ctx.save();ctx.translate(rx,ry);
     if(item.type==='gold'){
       if(item.deathPile){
         // Recoverable death pile — pulsing skull coin
@@ -10032,36 +10423,40 @@ function drawPause(){
   // Frosted dark overlay
   ctx.fillStyle='rgba(5,4,14,.72)';ctx.fillRect(0,0,W,H);
 
-  // Panel
-  const pw=Math.min(280,W*.78),ph=250,px=(W-pw)/2,py=(H-ph)/2;
+  // Buttons (defined first so the panel can size to fit)
+  const items=[
+    {label:'RESUME',bg:'#1a1830',glow:'#5544cc'},
+    {label:'CONTROLS',bg:'#141a28',glow:'#4a6699'},
+    {label:(G.muted?'🔇':'🔊')+' SOUND',bg:'#141820',glow:'#335566'},
+    {label:(typeof MUSIC!=='undefined'&&MUSIC.isEnabled()?'🎵':'🔇')+' MUSIC',bg:'#161426',glow:'#5a3a99'},
+    {label:'QUIT TO TOWER',bg:'#1a1218',glow:'#663344'},
+  ];
+  const bh=40,gap=8,header=64,pad=18;
+  const pw=Math.min(300,W*.82),ph=header+items.length*(bh+gap)+pad,px=(W-pw)/2,py=(H-ph)/2;
   ctx.fillStyle='#0e0c1e';ctx.fillRect(px,py,pw,ph);
   ctx.strokeStyle='#3a3460';ctx.lineWidth=1.5;ctx.strokeRect(px,py,pw,ph);
-  // Glow edge
   ctx.shadowColor='#5544aa';ctx.shadowBlur=18;ctx.strokeRect(px,py,pw,ph);ctx.shadowBlur=0;
 
   // Title
-  ctx.fillStyle='#c8c0f0';ctx.font=`bold ${Math.floor(pw*.1)}px Cinzel,serif`;
-  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('PAUSED',W/2,py+22);
-  ctx.fillStyle='#3a3460';ctx.fillRect(px+20,py+52,pw-40,1);
+  ctx.fillStyle='#c8c0f0';ctx.font=`bold ${Math.floor(pw*.094)}px Cinzel,serif`;
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('PAUSED',W/2,py+20);
+  ctx.fillStyle='#3a3460';ctx.fillRect(px+20,py+50,pw-40,1);
 
-  // Buttons
-  const bw=pw-60,bh=42,bx=(W-bw)/2;
+  const bw=pw-60,bx=(W-bw)/2;
   G._pauseBtns=[];
-
-  [['RESUME',py+68,'#1a1830','#5544cc'],
-   [G.muted?'🔇 UNMUTE':'🔊 MUTE',py+114,'#141820','#335566'],
-   ['QUIT TO TOWER',py+160,'#1a1218','#663344']].forEach(([label,by,bg,glow])=>{
-    const hov=G._pauseHover===label;
-    ctx.fillStyle=hov?bg.replace('18','28').replace('12','1e'):bg;
+  items.forEach((it,i)=>{
+    const by=py+header+i*(bh+gap);
+    const hov=G._pauseHover===it.label;
+    ctx.fillStyle=hov?'#222040':it.bg;
     ctx.fillRect(bx,by,bw,bh);
-    ctx.strokeStyle=glow;ctx.lineWidth=hov?2:1;
-    if(hov){ctx.shadowColor=glow;ctx.shadowBlur=10;}
+    ctx.strokeStyle=it.glow;ctx.lineWidth=hov?2:1;
+    if(hov){ctx.shadowColor=it.glow;ctx.shadowBlur=10;}
     ctx.strokeRect(bx,by,bw,bh);ctx.shadowBlur=0;
     ctx.fillStyle=hov?'#ffffff':'#c8c0e8';
-    ctx.font=`${Math.floor(bw*.09)}px Cinzel,serif`;
+    ctx.font=`${Math.floor(bw*.085)}px Cinzel,serif`;
     ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(label,W/2,by+bh/2);
-    G._pauseBtns.push({label,x:bx,y:by,w:bw,h:bh});
+    ctx.fillText(it.label,W/2,by+bh/2);
+    G._pauseBtns.push({label:it.label,x:bx,y:by,w:bw,h:bh});
   });
 }
 
@@ -10258,17 +10653,10 @@ function updHUD(){
   // Pause button
   const pb=document.getElementById('pausebtn');
   pb.style.display=(MODE==='level'||MODE==='boss'||MODE==='hub'||MODE==='pause')?'flex':'none';
-  // Crystals
+  // Crystals — one unified balance (spendable at the tavern on permanent upgrades)
   const cel=document.getElementById('crystalhud');
-  if(cel&&G.progress){
-    const cr=G.progress.crystals;
-    const fc=cr.forsaken||0,mc=cr.mountain||0,cc=cr.castle||0;
-    cel.innerHTML=
-      `<span style="color:#33ee66">✦${fc}</span>`+
-      `<span style="color:#555"> / </span>`+
-      `<span style="color:#4499ff">✦${mc}</span>`+
-      `<span style="color:#555"> / </span>`+
-      `<span style="color:#ff7722">✦${cc}</span>`;
+  if(cel){
+    cel.innerHTML=`<span style="color:#cc88ff">✦ ${G.p.crystals||0}</span>`;
   }
   // Active item
   const iel=document.getElementById('itemhud');
@@ -10395,6 +10783,7 @@ function loop(ts){
         }
         updateDyingEnemies(dt); // clients need this too for death tumbles from broadcast
         updateProjs(dt);
+        updateFamiliars(dt);
         G.frameCount=(G.frameCount||0)+1;
         updateWarnings(dt);
         updateAmbientParticles(dt);
@@ -10442,14 +10831,15 @@ function loop(ts){
 // CHARACTER SELECT DATA
 // ═══════════════════════════════════════
 const CHAR_CLASSES=[
-  {id:'warrior',  name:'Warrior',   icon:'✚', desc:'Unstoppable melee',      locked:true,  col:'#cc4444', stats:{atk:22,spd:135,maxHp:90}},
-  {id:'valkyrie', name:'Valkyrie',  icon:'✦', desc:'Shield maiden',          locked:true,  col:'#dd8844', stats:{atk:18,spd:148,maxHp:85}},
-  {id:'wizard',   name:'Wizard',    icon:'✧', desc:'Arcane control',         locked:false, col:'#9944cc', stats:{atk:26,spd:115,maxHp:70}},
-  {id:'archer',   name:'Archer',    icon:'▲', desc:'Swift ranged',           locked:true,  col:'#44aa44', stats:{atk:20,spd:172,maxHp:72}},
-  {id:'knight',   name:'Knight',    icon:'◆', desc:'Iron resolve',           locked:false, col:'#4466dd', stats:{atk:18,spd:130,maxHp:100}},
-  {id:'dwarf',    name:'Dwarf',     icon:'●', desc:'Unbreakable',           locked:false, col:'#996633', stats:{atk:22,spd:100,maxHp:120}},
-  {id:'sorceress',name:'Sorceress', icon:'★', desc:'Transforms enemies',     locked:true,  col:'#cc44aa', stats:{atk:22,spd:140,maxHp:68}},
-  {id:'jester',   name:'Jester',    icon:'♦', desc:'Bombs & chaos',          locked:false, col:'#ccbb22', stats:{atk:20,spd:175,maxHp:65}},
+  // stats: atk (per-hit damage) · spd (move speed) · maxHp · rate (attack speed) · luck (crit%)
+  {id:'warrior',  name:'Warrior',   icon:'✚', desc:'Unstoppable melee',      locked:true,  col:'#cc4444', stats:{atk:24,spd:138,maxHp:92, rate:2,luck:1}},
+  {id:'valkyrie', name:'Valkyrie',  icon:'✦', desc:'Shield maiden',          locked:true,  col:'#dd8844', stats:{atk:18,spd:146,maxHp:96, rate:1,luck:2}},
+  {id:'wizard',   name:'Wizard',    icon:'✧', desc:'Arcane control',         locked:false, col:'#9944cc', stats:{atk:28,spd:116,maxHp:66, rate:0,luck:2}},
+  {id:'archer',   name:'Archer',    icon:'▲', desc:'Swift ranged',           locked:true,  col:'#44aa44', stats:{atk:18,spd:170,maxHp:70, rate:4,luck:3}},
+  {id:'knight',   name:'Knight',    icon:'◆', desc:'Iron resolve',           locked:false, col:'#4466dd', stats:{atk:19,spd:130,maxHp:105,rate:1,luck:1}},
+  {id:'dwarf',    name:'Dwarf',     icon:'●', desc:'Unbreakable',            locked:false, col:'#996633', stats:{atk:24,spd:102,maxHp:128,rate:0,luck:0}},
+  {id:'sorceress',name:'Sorceress', icon:'★', desc:'Transforms enemies',     locked:true,  col:'#cc44aa', stats:{atk:23,spd:140,maxHp:64, rate:1,luck:3}},
+  {id:'jester',   name:'Jester',    icon:'♦', desc:'Bombs & chaos',          locked:false, col:'#ccbb22', stats:{atk:17,spd:178,maxHp:60, rate:3,luck:4}},
 ];
 const CHAR_COLORS=[
   {id:'red',    label:'Red',    primary:'#cc2222',accent:'#ff6644'},
@@ -11032,8 +11422,15 @@ function handlePauseClick(cx,cy){
     if(cx>=b.x&&cx<=b.x+b.w&&cy>=b.y&&cy<=b.y+b.h){
       if(b.label==='RESUME'){
         MODE=G._preMode||'hub';
-      } else if(b.label.includes('MUTE')){
+      } else if(b.label==='CONTROLS'){
+        toggleControls(true); // overlay shows above the pause panel; closing returns here
+        return;
+      } else if(b.label.includes('SOUND')){
         G.muted=!G.muted;SFX.setMute(G.muted);
+        return; // stay paused so the label updates and the player can keep adjusting
+      } else if(b.label.includes('MUSIC')){
+        if(typeof MUSIC!=='undefined')MUSIC.setEnabled(!MUSIC.isEnabled());
+        return; // stay paused
       } else if(b.label==='QUIT TO TOWER'){
         G.lv=null;G.projs=[];G.parts=[];G.dyingEnemies=[];
         G.p.x=HPSX;G.p.y=HPSY;
