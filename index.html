@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Gauntless</title>
+  <title>Plunder Pit</title>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -11,10 +11,15 @@
     canvas{display:block;touch-action:none}
     .screen{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,4,14,.97)}
     .screen h1{font-family:'Cinzel',serif;font-size:clamp(26px,6.5vw,46px);color:#d4a853;text-shadow:0 0 28px rgba(212,168,83,.55),0 0 60px rgba(212,168,83,.2);margin-bottom:8px;text-align:center}
-    .screen .sub{font-style:italic;color:#556;font-size:15px;margin-bottom:40px}
+    .screen .sub{font-style:italic;color:#9aa0c0;font-size:15px;margin-bottom:40px}
     .bigbtn{font-family:'Cinzel',serif;font-size:15px;padding:13px 42px;background:transparent;border:1px solid #d4a853;color:#d4a853;cursor:pointer;letter-spacing:.18em;touch-action:manipulation;margin:4px 0}
     .bigbtn:active{background:rgba(212,168,83,.12)}
     .hidden{display:none!important}
+    input::placeholder{color:#9a90b5;opacity:1}
+    #shopitems::-webkit-scrollbar{width:8px}
+    #shopitems::-webkit-scrollbar-track{background:rgba(255,255,255,.04);border-radius:4px}
+    #shopitems::-webkit-scrollbar-thumb{background:rgba(150,130,200,.5);border-radius:4px}
+    #shopitems{scrollbar-width:thin;scrollbar-color:rgba(150,130,200,.5) rgba(255,255,255,.04)}
     /* ── HUD ─────────────────────────────────────────────── */
     #hud{position:fixed;top:0;left:0;right:0;pointer-events:none;z-index:10;padding:10px 12px;display:flex;justify-content:space-between;align-items:flex-start}
     /* Player card */
@@ -22,7 +27,7 @@
     #hudportrait{width:40px;height:40px;border-radius:4px;border:1px solid rgba(255,255,255,.12);flex-shrink:0;display:block}
     #hud-bars{display:flex;flex-direction:column;gap:3px;min-width:128px}
     #hud-name-row{display:flex;justify-content:space-between;align-items:center}
-    #hud-classname{font-family:'Cinzel',serif;font-size:8px;color:#bbb;letter-spacing:.1em;text-transform:uppercase}
+    #hud-classname{font-family:'Cinzel',serif;font-size:9px;color:#e0dd7a;letter-spacing:.1em;text-transform:uppercase}
     #hud-lives{font-size:11px;letter-spacing:2px}
     .hbar-wrap{position:relative;width:128px;height:12px;background:rgba(15,4,4,.85);border:2px solid rgba(200,40,40,.6);border-radius:2px;overflow:hidden}
     .hbar-fill{height:100%;border-radius:2px;transition:width .15s;background:linear-gradient(90deg,#991a1a,#dd3333)}
@@ -33,42 +38,43 @@
     .hbar-seg:last-child{border-right:none}
     #hud-bottom-row{display:flex;justify-content:space-between;align-items:center;margin-top:1px}
     #hud-gold{font-family:'Cinzel',serif;font-size:10px;color:#f5c542}
-    #crystalhud{font-size:8px;letter-spacing:.3px;color:#aaa}
+    #crystalhud{font-size:8px;letter-spacing:.3px;color:#d8d0ec}
     #itemhud{font-family:'Cinzel',serif;font-size:9px;color:#44ffcc;cursor:pointer;pointer-events:auto}
     #hud-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
     #hud-top-right{display:flex;align-items:center;gap:7px;pointer-events:auto}
-    #rnahud{font-family:'Cinzel',serif;font-size:9px;color:#998;letter-spacing:.1em}
-    #lhud{font-family:'Cinzel',serif;font-size:9px;color:#aa99cc}
+    #rnahud{font-family:'Cinzel',serif;font-size:10px;color:#cfc6a6;letter-spacing:.1em}
+    #lhud{font-family:'Cinzel',serif;font-size:10px;color:#c8b6e6}
     #pausebtn{width:28px;height:28px;background:rgba(10,8,20,.7);border:1px solid rgba(80,60,140,.4);color:#998;font-size:13px;cursor:pointer;display:none;align-items:center;justify-content:center;font-family:sans-serif;border-radius:4px;touch-action:manipulation;pointer-events:auto;flex-shrink:0}
     #pausebtn:active{background:rgba(80,60,160,.3)}
-    #team-cards{display:flex;flex-direction:column;gap:4px;margin-top:6px;align-items:flex-end}
-    .team-card{display:flex;align-items:center;gap:5px;background:rgba(8,6,18,.78);border:1px solid rgba(80,60,140,.3);border-radius:3px;padding:3px 6px;font-family:'Cinzel',serif;min-width:118px}
-    .team-card.dead{opacity:.45;filter:grayscale(.6)}
-    .team-card-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 4px currentColor}
-    .team-card-info{flex:1;display:flex;flex-direction:column;gap:1px}
-    .team-card-name{font-size:8px;color:#aab;letter-spacing:.08em}
-    .team-card-hp{height:5px;background:rgba(40,8,8,.7);border-radius:1px;overflow:hidden;position:relative}
-    .team-card-hpf{height:100%;background:linear-gradient(90deg,#c8302a,#e85040);transition:width .25s}
-    .team-card-stats{font-size:7px;color:#998;display:flex;gap:6px;letter-spacing:.04em}
-    #crystalhud{font-size:9px;letter-spacing:.5px;color:#aaa}
+    #hud-left{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+    #team-cards{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+    .team-card{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.52);border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--pc,#888);border-radius:6px;padding:5px 8px;font-family:'Cinzel',serif;width:188px;box-sizing:border-box}
+    .team-card.dead{opacity:.5;filter:grayscale(.65)}
+    .team-card-dot{width:22px;height:22px;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);box-shadow:0 0 5px currentColor;border:1px solid rgba(255,255,255,.18)}
+    .team-card-info{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+    .team-card-name{font-size:9px;color:#d4dcd4;letter-spacing:.08em;text-transform:uppercase;display:flex;justify-content:space-between}
+    .team-card-hp{height:7px;background:rgba(15,4,4,.85);border:1px solid rgba(200,40,40,.45);border-radius:2px;overflow:hidden;position:relative}
+    .team-card-hpf{height:100%;background:linear-gradient(90deg,#991a1a,#dd3333);transition:width .2s}
+    .team-card-stats{font-size:8px;color:#c2bad2;display:flex;gap:8px;letter-spacing:.04em}
+    #crystalhud{font-size:10px;letter-spacing:.5px;color:#d8d0ec}
     #rlabel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Cinzel',serif;font-size:clamp(18px,4.5vw,32px);color:#d4a853;text-shadow:0 0 22px rgba(212,168,83,.65);pointer-events:none;z-index:30;opacity:0;transition:opacity .5s;text-align:center}
     /* Overlay panels */
     .overlay{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center}
     .ctrlrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1c1830;font-family:'Cinzel',serif}
     .ctrlrow b{color:#cdd;font-size:13px;font-weight:600}
-    .ctrlrow span{color:#8898aa;font-size:12px;text-align:right}
+    .ctrlrow span{color:#aab6cc;font-size:12px;text-align:right}
     .panel{background:rgba(7,5,18,.97);border:1px solid rgba(212,168,83,.28);padding:22px 28px;max-width:370px;width:90%}
     .panel h2{font-family:'Cinzel',serif;color:#d4a853;font-size:20px;text-align:center;margin-bottom:14px}
     .shop-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
     .shop-name{font-size:14px;color:#ccc}
-    .shop-desc{font-size:10px;color:#666;font-style:italic}
+    .shop-desc{font-size:11px;color:#a99ec4;font-style:italic}
     .sbtn{font-family:'Cinzel',serif;font-size:11px;padding:5px 11px;background:transparent;border:1px solid #d4a853;color:#d4a853;cursor:pointer;touch-action:manipulation;min-width:50px}
-    .sbtn:disabled{border-color:#333;color:#333}
+    .sbtn:disabled{border-color:#555;color:#6e6880}
     .sbtn:active:not(:disabled){background:rgba(212,168,83,.14)}
     .cont{font-family:'Cinzel',serif;font-size:13px;padding:11px 28px;background:transparent;border:1px solid #d4a853;color:#d4a853;cursor:pointer;margin-top:18px;display:block;width:100%;touch-action:manipulation;letter-spacing:.12em}
     .cont:active{background:rgba(212,168,83,.12)}
     .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 28px;margin-bottom:24px;text-align:center}
-    .si{font-size:13px;color:#888}.si span{color:#d4a853;font-size:19px;display:block}
+    .si{font-size:13px;color:#b4accb}.si span{color:#d4a853;font-size:19px;display:block}
   </style>
 </head>
 <body>
@@ -76,27 +82,32 @@
 
 <!-- HUD -->
 <div id="hud" class="hidden">
-  <!-- Player card -->
-  <div id="hud-card">
-    <canvas id="hudportrait" width="40" height="40"></canvas>
-    <div id="hud-bars">
-      <div id="hud-name-row">
-        <span id="hud-classname">Knight</span>
-        <span id="hud-lives"></span>
+  <!-- Left cluster: your frame + party frames stacked together (Warcraft-style) -->
+  <div id="hud-left">
+    <!-- Player card -->
+    <div id="hud-card">
+      <canvas id="hudportrait" width="40" height="40"></canvas>
+      <div id="hud-bars">
+        <div id="hud-name-row">
+          <span id="hud-classname">Knight</span>
+          <span id="hud-lives"></span>
+        </div>
+        <div class="hbar-wrap" id="hp-wrap">
+          <div class="hbar-fill" id="hpf" style="width:100%"></div>
+          <div class="hbar-segs" id="hp-segs"></div>
+        </div>
+        <div class="hbar-wrap xp-wrap">
+          <div class="hbar-fill xp-fill" id="xpf" style="width:0%"></div>
+        </div>
+        <div id="hud-bottom-row">
+          <span id="hud-gold">⚜ 0</span>
+          <span id="crystalhud"></span>
+        </div>
+        <div id="itemhud" style="display:none" onclick="if(G.p.item&&G.p.itemTimer<=0)useItem()"></div>
       </div>
-      <div class="hbar-wrap" id="hp-wrap">
-        <div class="hbar-fill" id="hpf" style="width:100%"></div>
-        <div class="hbar-segs" id="hp-segs"></div>
-      </div>
-      <div class="hbar-wrap xp-wrap">
-        <div class="hbar-fill xp-fill" id="xpf" style="width:0%"></div>
-      </div>
-      <div id="hud-bottom-row">
-        <span id="hud-gold">⚜ 0</span>
-        <span id="crystalhud"></span>
-      </div>
-      <div id="itemhud" style="display:none" onclick="if(G.p.item&&G.p.itemTimer<=0)useItem()"></div>
     </div>
+    <!-- Party frames (multiplayer) — stacked directly under your frame -->
+    <div id="team-cards"></div>
   </div>
   <!-- Right cluster -->
   <div id="hud-right">
@@ -105,8 +116,6 @@
       <span id="lhud">Lv.1</span>
       <button id="pausebtn" onclick="if(MODE==='pause'){MODE=G._preMode||'hub';}else if(MODE==='level'||MODE==='boss'||MODE==='hub'){G._preMode=MODE;MODE='pause';}">⏸</button>
     </div>
-    <!-- Teammate status cards (multiplayer) -->
-    <div id="team-cards"></div>
   </div>
 </div>
 <div id="msg"></div>
@@ -114,10 +123,10 @@
 
 <!-- Title -->
 <div class="screen" id="tscreen">
-  <h1>Gauntless</h1>
+  <h1>Plunder Pit</h1>
   <div class="sub">~ Eight Realms. One Demon. No Mercy. ~</div>
   <button class="bigbtn" id="startbtn">Enter the Tower</button>
-  <div id="ver-tag" style="position:absolute;bottom:18px;right:20px;font-family:'Cinzel',serif;font-size:9px;color:#333;letter-spacing:.1em">v0.27</div>
+  <div id="ver-tag" style="position:absolute;bottom:18px;right:20px;font-family:'Cinzel',serif;font-size:9px;color:#6a6478;letter-spacing:.1em">v0.27</div>
 </div>
 
 <!-- Shop -->
@@ -125,7 +134,7 @@
   <div class="panel" style="display:flex;flex-direction:column;max-height:88vh;padding:14px 20px">
     <h2 style="margin-bottom:4px">🍺 The Gilded Gauntlet 🍺</h2>
     <div class="hs" id="shopgold" style="color:#f5c542;text-align:right;margin-bottom:4px;flex-shrink:0">Gold: 0</div>
-    <div id="shopitems" style="overflow-y:auto;flex:1 1 auto;min-height:0"></div>
+    <div id="shopitems" style="overflow-y:auto;flex:1 1 auto;min-height:0;padding-right:14px"></div>
     <button class="cont" id="shopcont" style="margin-top:8px;flex-shrink:0">Continue</button>
   </div>
 </div>
@@ -134,7 +143,7 @@
 <div class="overlay hidden" id="deathov">
   <div class="panel" style="text-align:center">
     <h2>You Have Fallen</h2>
-    <p style="font-style:italic;color:#556;margin-bottom:18px" id="deathsub">A warm hearth at The Gilded Gauntlet awaits your return…</p>
+    <p style="font-style:italic;color:#9aa0c0;margin-bottom:18px" id="deathsub">A warm hearth at The Gilded Gauntlet awaits your return…</p>
     <div class="stat-grid" id="dstats"></div>
     <button class="cont" id="drest" style="margin-bottom:8px">Return to Tower</button>
     <br><button class="cont" id="drestart" style="background:rgba(60,20,20,.8);font-size:11px;padding:8px 20px">Start Over</button>
@@ -147,7 +156,7 @@
     <div style="font-family:'Cinzel',serif;font-size:22px;color:#cc3333;margin-bottom:12px">SLAIN</div>
     <div id="respawn-hearts" style="font-size:26px;letter-spacing:6px;margin-bottom:14px"></div>
     <div id="respawn-msg" style="font-family:'Cinzel',serif;font-size:11px;color:#888;margin-bottom:8px"></div>
-    <div style="font-family:'Cinzel',serif;font-size:10px;color:#444">Respawning…</div>
+    <div style="font-family:'Cinzel',serif;font-size:11px;color:#c0b8d0">Respawning…</div>
   </div>
 </div>
 
@@ -161,7 +170,7 @@
         <div class="ctrlrow"><b>Move</b><span>WASD or Arrow Keys</span></div>
         <div class="ctrlrow"><b>Aim &amp; Fire</b><span>Hold Left Mouse Button</span></div>
         <div class="ctrlrow"><b>Turbo / Ability</b><span>Press E</span></div>
-        <div class="ctrlrow" style="border:none"><span style="color:#667;font-size:11px">Tap E for the quick ability · hold the bar full for the ultimate</span></div>
+        <div class="ctrlrow" style="border:none"><span style="color:#aab4c8;font-size:12px">Tap E for the quick ability · hold the bar full for the ultimate</span></div>
         <div class="ctrlrow"><b>Melee</b><span>Automatic in close range</span></div>
         <div class="ctrlrow"><b>Pause</b><span>Esc or ⏸ button</span></div>
       </div>
@@ -170,12 +179,12 @@
         <div class="ctrlrow"><b>Move</b><span>Left joystick (drag, left half)</span></div>
         <div class="ctrlrow"><b>Aim &amp; Fire</b><span>Right joystick (drag, right half)</span></div>
         <div class="ctrlrow"><b>Turbo / Ability</b><span>Tap the ⚡ button</span></div>
-        <div class="ctrlrow" style="border:none"><span style="color:#667;font-size:11px">Charges automatically · fires the ultimate when full</span></div>
+        <div class="ctrlrow" style="border:none"><span style="color:#aab4c8;font-size:12px">Charges automatically · fires the ultimate when full</span></div>
         <div class="ctrlrow"><b>Melee</b><span>Automatic in close range</span></div>
         <div class="ctrlrow"><b>Pause</b><span>⏸ button (top-right)</span></div>
       </div>
     </div>
-    <div style="font-family:'Cinzel',serif;font-size:11px;color:#556;text-align:center;margin-top:16px">✦ Each class's turbo shows its own ability name on the button</div>
+    <div style="font-family:'Cinzel',serif;font-size:11px;color:#b4acce;text-align:center;margin-top:16px">✦ Each class's turbo shows its own ability name on the button</div>
     <div style="text-align:center;margin-top:16px">
       <button onclick="toggleControls(false)" style="font-family:'Cinzel',serif;font-size:13px;color:#d4a853;background:#0e0c1a;border:1px solid #d4a853;border-radius:8px;padding:10px 28px;cursor:pointer">CLOSE</button>
     </div>
@@ -186,13 +195,13 @@
 <div class="overlay hidden" id="mp-modal" style="background:rgba(0,0,0,.88)" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()">
   <div class="panel" style="text-align:center;max-width:300px">
     <h2 style="margin-bottom:4px">CO-OP</h2>
-    <div style="font-family:'Cinzel',serif;font-size:9px;color:#555;margin-bottom:4px;letter-spacing:.1em">UP TO 4 PLAYERS</div>
-    <div style="font-family:'Cinzel',serif;font-size:8px;color:#444;margin-bottom:14px">⚠ Download the game file and open it locally to use co-op</div>
+    <div style="font-family:'Cinzel',serif;font-size:11px;color:#b8a8d8;margin-bottom:5px;letter-spacing:.1em">UP TO 4 PLAYERS</div>
+    <div style="font-family:'Cinzel',serif;font-size:11px;color:#e0b85a;margin-bottom:14px;line-height:1.45">⚠ Download the game file and open it locally to use co-op</div>
 
     <div id="mp-host-section">
       <button class="cont" id="mp-host-btn" onclick="mpHost()" style="margin-bottom:10px;width:100%">HOST GAME</button>
       <div id="mp-waiting" class="hidden" style="margin-bottom:12px">
-        <div style="font-family:'Cinzel',serif;font-size:9px;color:#777;margin-bottom:6px">SHARE THIS CODE</div>
+        <div style="font-family:'Cinzel',serif;font-size:11px;color:#cabbe8;margin-bottom:6px;letter-spacing:.1em">SHARE THIS CODE</div>
         <div id="mp-code-display" style="font-family:monospace;font-size:32px;font-weight:bold;color:#f5c542;letter-spacing:8px;padding:10px;background:#0d0d0d;border:1px solid #222;border-radius:3px;margin-bottom:6px">——</div>
         <button class="cont" onclick="mpCopyCode()" style="width:100%;font-size:9px;margin-bottom:8px">COPY CODE</button>
         <div id="mp-players" style="margin:8px 0;text-align:left;border:1px solid #1a1a1a;border-radius:4px;padding:6px"></div>
@@ -204,7 +213,7 @@
     <div style="border-top:1px solid #1a1a1a;margin:10px 0"></div>
 
     <div id="mp-join-section">
-      <div style="font-family:'Cinzel',serif;font-size:9px;color:#777;margin-bottom:8px">JOIN A GAME</div>
+      <div style="font-family:'Cinzel',serif;font-size:11px;color:#cabbe8;margin-bottom:8px;letter-spacing:.1em">JOIN A GAME</div>
       <input id="mp-join-input" placeholder="e.g. AB4X7K"
         maxlength="8" autocomplete="off" autocorrect="off"
         autocapitalize="characters" spellcheck="false"
@@ -213,7 +222,7 @@
         ontouchend="event.stopPropagation();this.focus()"
         onclick="this.focus()"
         style="width:100%;box-sizing:border-box;padding:12px;background:#0d0d0d;
-               border:1px solid #2a2a2a;color:#fff;font-family:monospace;
+               border:1px solid rgba(212,168,83,.45);color:#fff;font-family:monospace;
                font-size:18px;text-align:center;letter-spacing:4px;
                text-transform:uppercase;margin-bottom:8px;border-radius:3px">
       <button class="cont" onclick="mpJoin()" style="width:100%">JOIN</button>
@@ -221,7 +230,7 @@
 
     <button class="cont" onclick="document.getElementById('mp-modal').classList.add('hidden')"
       style="margin-top:10px;font-size:9px;background:rgba(30,10,10,.8);width:100%">CANCEL</button>
-    <div id="mp-status-text" style="font-family:'Cinzel',serif;font-size:9px;color:#555;margin-top:8px;min-height:14px"></div>
+    <div id="mp-status-text" style="font-family:'Cinzel',serif;font-size:11px;color:#c0b4d8;margin-top:8px;min-height:14px"></div>
   </div>
 </div>
 
@@ -259,7 +268,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.39';
+const VERSION='1.69';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -310,7 +319,7 @@ function announceMutator(){
 // ═══════════════════════════════════════
 const REALMS=[
   {
-    id:'forsaken',name:'Forsaken Province',order:0,unlockCost:5,
+    id:'forsaken',name:'Boneyard',order:0,unlockCost:5,
     th:{fl:['#2a1e3c','#241830'],wl:'#080412',wt:'#0e0820',tc:'rgba(160,80,220,0.18)',fc:'rgba(255,160,60,',fg:'#ff9922',sp:'#3a1f55',ss:'#7744aa'},
     ed:[
       {name:'Zombie',       col:'#5a8a5a',out:'#3a6a3a',hp:38, atk:8, spd:48, xp:8, g:[5,15], sz:.58,type:'walker'},
@@ -323,7 +332,7 @@ const REALMS=[
     lvs:2,
   },
   {
-    id:'mountain',name:'Mountain Realm',order:1,unlockCost:50,
+    id:'mountain',name:'Ashlands',order:1,unlockCost:50,
     th:{fl:['#2a2614','#242210'],wl:'#070604',wt:'#141208',tc:'rgba(200,120,50,0.2)',fc:'rgba(255,155,60,',fg:'#ff8800',sp:'#4a3020',ss:'#aa6633'},
     ed:[
       {name:'Orc',          col:'#5a8a30',out:'#3a6a20',hp:55, atk:13,spd:62, xp:18,g:[8,20], sz:.65,type:'walker'},
@@ -336,7 +345,7 @@ const REALMS=[
     lvs:2,
   },
   {
-    id:'castle',name:'Castle Realm',order:2,unlockCost:75,
+    id:'castle',name:'Stronghold',order:2,unlockCost:75,
     th:{fl:['#2c2834','#26222e'],wl:'#0a0810',wt:'#141020',tc:'rgba(100,80,200,0.18)',fc:'rgba(255,210,130,',fg:'#ffe090',sp:'#2a1f44',ss:'#6655bb'},
     ed:[
       {name:'Dark Guard',    col:'#4a5a7a',out:'#3a4a6a',hp:75, atk:18,spd:65, xp:25,g:[12,28],sz:.68,type:'walker'},
@@ -348,7 +357,38 @@ const REALMS=[
     boss:{name:'Dragon Lord',col:'#cc3333',out:'#ff6666',hp:5500,atk:18,sz:1.5,phase1color:'#cc3333',phase2color:'#ff8800'},
     lvs:2,
   },
+  {
+    id:'ice',name:'Frostlands',order:3,unlockCost:75,gimmick:'ice',
+    th:{fl:['#1e2a3a','#18222e'],wl:'#06090f',wt:'#0c1420',tc:'rgba(130,200,255,0.18)',fc:'rgba(170,220,255,',fg:'#aee0ff',sp:'#33455a',ss:'#9cc8e8'},
+    ed:[
+      {name:'Frost Wight',     col:'#7fa8c8',out:'#5a82a2',hp:55,atk:14,spd:60, xp:20,g:[10,22],sz:.64,type:'walker'},
+      {name:'Icebow Skeleton', col:'#cfe4f2',out:'#9fc0d6',hp:46,atk:16,spd:60, xp:24,g:[12,28],sz:.58,type:'archer'},
+      {name:'Glacier Lobber',  col:'#5fa0c0',out:'#3f80a0',hp:64,atk:23,spd:30, xp:30,g:[15,32],sz:.74,type:'lobber'},
+      {name:'Frostbite Wisp',  col:'#aee8ff',out:'#66c0ee',hp:34,atk:60,spd:112,xp:24,g:[8,18], sz:.52,type:'suicide_bomber'},
+    ],
+    cc:'#88d8ff',
+    boss:{name:'The Rimewarden',col:'#bcdcf0',out:'#e8f4ff',hp:4200,atk:16,sz:1.45,phase1color:'#bcdcf0',phase2color:'#6fc8ff'},
+    lvs:2,
+  },
 ];
+
+// Global difficulty ramp: enemies get tougher with each DISTINCT realm boss cleared. Lets
+// worlds be explored in any order with difficulty tracking the player's progress rather than
+// which door they picked. ~13% per boss cleared. (Counts cleared realms, can't be farmed.)
+function globalScale(){
+  const rp=G.progress?.rp; if(!rp)return 1;
+  let n=0; for(const k in rp){ if(rp[k]?.bossDown)n++; }
+  return 1+n*0.13;
+}
+
+// Realm GIMMICK hook: movement responsiveness. 0 = instant (snappy, normal realms).
+// A positive value is a lerp rate — lower = more momentum/slide. Frostlands has icy floors
+// (mild slide), stronger inside the Rimewarden's arena. Future realms can extend this.
+function moveResponse(){
+  const g=G.curRealm?.gimmick;
+  if(g==='ice') return MODE==='boss'?3.5:7.5;
+  return 0;
+}
 
 // ═══════════════════════════════════════
 // GAME STATE
@@ -370,7 +410,7 @@ function initGame(){
        keys:0,item:null,itemTimer:0,
        upgrades:{atk:0,maxhp:0,spd:0},
        invuln:0,facing:{x:1,y:0},atkTimer:0,attacking:false,atkProg:0,atkAngle:0,magTimer:0,kills:0},
-    progress:{unlocked:[],rp:{},runestones:[],hubCrystals:[false,false,false,false,false]},
+    progress:{unlocked:[],rp:{},hubCrystals:[false,false,false,false,false]},
     cam:{x:0,y:0},
     players:[],      // all active players — populated after p is set
     localIdx:0,      // which index is the local player
@@ -417,6 +457,8 @@ window.addEventListener('keydown',e=>{
   if(tag==='INPUT'||tag==='TEXTAREA')return; // let typing through
   keys[e.code]=true;e.preventDefault?.();
   if(e.code==='Escape'||e.code==='KeyP'){
+    if(MODE==='charselect'&&G._changingHero){G._changingHero=false;MODE='hub';document.getElementById('hud').classList.add('hidden');return;}
+    if(MODE==='bossSelect'){MODE='hub';document.getElementById('hud').classList.remove('hidden');G.bossSelect=null;return;}
     if(MODE==='pause'){MODE=G._preMode||'hub';return;}
     if(MODE==='level'||MODE==='boss'||MODE==='hub'){G._preMode=MODE;MODE='pause';return;}
   }
@@ -431,7 +473,7 @@ window.addEventListener('contextmenu',e=>e.preventDefault());
 // honouring any saved music on/off preference.
 function _kickMusic(){
   try{
-    let pref='1';try{pref=localStorage.getItem('gauntless_music')||'1';}catch(e){}
+    let pref='1';try{pref=localStorage.getItem('plunderpit_music')||'1';}catch(e){}
     MUSIC.setEnabled(pref!=='0');
     MUSIC.start();
     const mb=document.getElementById('musicbtn');
@@ -475,6 +517,7 @@ cv.addEventListener('click',e=>{
     return;
   }
   if(MODE==='charselect'){handleCharSelectClick(cx,cy);}
+  if(MODE==='bossSelect'){handleBossSelectClick(cx,cy);}
 });
 
 function onTS(e){
@@ -494,6 +537,12 @@ function onTS(e){
     const r=cv.getBoundingClientRect();
     for(const t of e.changedTouches)
       handleCharSelectClick((t.clientX-r.left)*(cv.width/r.width),(t.clientY-r.top)*(cv.height/r.height));
+    return;
+  }
+  if(MODE==='bossSelect'){
+    const r=cv.getBoundingClientRect();
+    for(const t of e.changedTouches)
+      handleBossSelectClick((t.clientX-r.left)*(cv.width/r.width),(t.clientY-r.top)*(cv.height/r.height));
     return;
   }
   if(!G.joy||MODE==='title'||MODE==='shop'||MODE==='death') return;
@@ -623,25 +672,26 @@ const hubTorches=[
   {tx:2,ty:HH-3,ph:3},{tx:HW-3,ty:HH-3,ph:4.5},
   {tx:10,ty:11,ph:.8},{tx:15,ty:11,ph:2.2}, // flanking the tavern
 ];
-// ── GDL tower layout: 8 themed doors. Left column (top→down): 1 Forsaken, 3 Castle,
-// 4 Sky, 5 Desert.  Right column (top→down): 2 Mountain, 6 Forest, 7 Ice, 8 Dream.
-// Three are playable realms; the other five are GDL-themed placeholders (Coming Soon).
+// Tower layout: 8 themed doors (positions/numbers fixed; themes shuffled so the order isn't 1:1).
+// Left column (top→down): 1 Boneyard*, 3 Ashlands*, 4 Mirewood, 5 Dreamlands.
+// Right column (top→down): 2 Frostlands, 6 Stronghold*, 7 Skyreach, 8 Sunwastes.   (* = playable)
+// Boneyard stays the entry door; the other two playable realms sit at left-2 and right-2.
 const HSX=TL*13, HSY=TL*12.5;        // Barkeep (centre of the tower)
 const HPSX=TL*13, HPSY=TL*16.5;      // Player start, just below the bar
 const _LX=6,_RX=20,_RY=[4.5,10,15.5,21];
 const HUB_DOORS=[
-  {n:1,x:_LX,y:_RY[0],name:'Forsaken Province',cc:'#a85cdc',realmId:'forsaken',motif:'undead'},
-  {n:2,x:_RX,y:_RY[0],name:'Mountain Kingdom', cc:'#e0843c',realmId:'mountain',motif:'fire'},
-  {n:3,x:_LX,y:_RY[1],name:'Castle Stronghold',cc:'#5c78c8',realmId:'castle',  motif:'castle'},
-  {n:4,x:_LX,y:_RY[2],name:'Sky Dominion',     cc:'#56c8b0',comingSoon:true,    motif:'sky'},
-  {n:5,x:_LX,y:_RY[3],name:'Desert Land',      cc:'#e0b85a',comingSoon:true,    motif:'desert'},
-  {n:6,x:_RX,y:_RY[1],name:'Forest Realm',     cc:'#4a9a4a',comingSoon:true,    motif:'forest'},
-  {n:7,x:_RX,y:_RY[2],name:'Ice Domain',       cc:'#88d8ff',comingSoon:true,    motif:'ice'},
-  {n:8,x:_RX,y:_RY[3],name:'Dream World',      cc:'#cc88ee',comingSoon:true,    motif:'dream'},
+  {n:1,x:_LX,y:_RY[0],name:'Boneyard',  cc:'#a85cdc',realmId:'forsaken',motif:'undead'}, // entry door (stays)
+  {n:2,x:_RX,y:_RY[0],name:'Frostlands',cc:'#88d8ff',realmId:'ice',     motif:'ice'},
+  {n:3,x:_LX,y:_RY[1],name:'Ashlands',  cc:'#e0843c',realmId:'mountain',motif:'fire'},
+  {n:4,x:_LX,y:_RY[2],name:'Mirewood',  cc:'#4a9a4a',comingSoon:true,   motif:'forest'},
+  {n:5,x:_LX,y:_RY[3],name:'Dreamlands',cc:'#cc88ee',comingSoon:true,   motif:'dream'},
+  {n:6,x:_RX,y:_RY[1],name:'Stronghold',cc:'#5c78c8',realmId:'castle',  motif:'castle'},
+  {n:7,x:_RX,y:_RY[2],name:'Skyreach',  cc:'#56c8b0',comingSoon:true,   motif:'sky'},
+  {n:8,x:_RX,y:_RY[3],name:'Sunwastes', cc:'#e0b85a',comingSoon:true,   motif:'desert'},
   {n:0,x:13, y:2.6,    name:'Trial of Champions',cc:'#ff5544',bossRush:true,     motif:'trial'},
 ].map(d=>({...d,wx:d.x*TL,wy:d.y*TL,realm:REALMS.find(r=>r.id===d.realmId)||null}));
 // 5 one-time golden crystals — a breadcrumb trail leading from the player's start up to
-// the Forsaken Province door (top-left); collecting all five unlocks that realm.
+// the Boneyard door (top-left); collecting all five unlocks that realm.
 const HUB_CRYSTALS=[
   {x:TL*11.5, y:TL*15},   // nearest the player start
   {x:TL*10,   y:TL*12.5},
@@ -679,7 +729,7 @@ function updateHubWalk(dt){
   });
   if(!G.hubNear&&dist(p,{x:HSX,y:HSY})<TL*2.8)G.hubNear={type:'sumner'};
 
-  // Hub crystal collection (golden crystals unlock Forsaken Province)
+  // Hub crystal collection (golden crystals unlock Boneyard)
   HUB_CRYSTALS.forEach((c,ci)=>{
     if(G.progress.hubCrystals[ci])return;
     if(dist(p,c)<TL*.72){
@@ -704,7 +754,7 @@ function updateHubWalk(dt){
     G.p.turbo=G.p.turboMax2||200;
     G.p.magTimer=0;
     G._devMode=true;
-    ['forsaken','mountain','castle'].forEach(id=>{
+    ['forsaken','mountain','castle','ice'].forEach(id=>{
       if(!G.progress.unlocked.includes(id))G.progress.unlocked.push(id);
       if(G.progress.rp[id])G.progress.rp[id].bossDown=true; // unlocks the Trial of Champions
     });
@@ -722,9 +772,9 @@ function updateHubWalk(dt){
         const d=HUB_DOORS[G.hubNear.i];
         if(d.comingSoon){showMsg(`${d.name} — the portal is sealed… for now.`);return;}
         if(d.bossRush){
-          if(!REALMS.every(r=>G.progress.rp[r.id]?.bossDown)){showMsg('Clear all three realms to unlock the Trial.');return;}
+          if(!REALMS.every(r=>G.progress.rp[r.id]?.bossDown)){showMsg('Clear every realm to unlock the Trial.');return;}
           if(MP.enabled&&!MP.isHost){showMsg('Waiting for host to start the Trial…');return;}
-          startBossRush();return;
+          openBossSelect();return;
         }
         const realm=d.realm;
         if(!G.progress.unlocked.includes(realm.id)){showMsg(`Requires ${realm.unlockCost} crystals`);return;}
@@ -817,10 +867,11 @@ function drawHub(){
   ctx.fillStyle='#06050e';ctx.fillRect(0,0,cv.width,cv.height);
   // Ensure CO-OP button exists and is visible only in hub
   if(!document.getElementById('coopbtn')){
-    const cb=document.createElement('button');cb.id='coopbtn';cb.textContent='CO-OP';
-    cb.style.cssText='position:fixed;top:10px;left:14px;font-family:Cinzel,serif;font-size:10px;'+
-      'background:rgba(40,20,80,.8);border:1px solid rgba(150,100,255,.4);color:#aa88ff;'+
-      'padding:7px 14px;border-radius:4px;cursor:pointer;z-index:15;pointer-events:auto;letter-spacing:.1em';
+    const cb=document.createElement('button');cb.id='coopbtn';cb.textContent='⚔  PLAY CO-OP';
+    cb.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);font-family:Cinzel,serif;font-size:13px;'+
+      'background:linear-gradient(180deg,rgba(66,40,130,.94),rgba(38,20,78,.94));border:1px solid rgba(170,120,255,.65);color:#d6c0ff;'+
+      'padding:12px 30px;border-radius:7px;cursor:pointer;z-index:15;pointer-events:auto;letter-spacing:.16em;'+
+      'box-shadow:0 3px 16px rgba(120,80,220,.45);white-space:nowrap';
     cb.onclick=()=>document.getElementById('mp-modal').classList.remove('hidden');
     document.body.appendChild(cb);
   }
@@ -1153,8 +1204,6 @@ function drawHub(){
   ctx.textAlign='left';ctx.fillStyle='#f5c542';ctx.fillText(`⚜ ${G.p.gold}`,12,19);
   ctx.textAlign='center';ctx.fillStyle='#c8a8ff';
   ctx.fillText(`Lv ${G.p.level}  ·  ATK ${G.p.atk}`,cv.width/2,19);
-  ctx.textAlign='right';ctx.fillStyle='#aaccff';
-  ctx.fillText(`Runestones ${G.progress.runestones.length}/3`,cv.width-12,19);
   if(!forsakenUnlocked){
     ctx.textAlign='center';ctx.fillStyle='#f5c542';ctx.font='10px Cinzel,serif';
     ctx.fillText(`✦ ${hc}/5 Tower Crystals — explore the hub to find them`,cv.width/2,40);
@@ -1184,37 +1233,59 @@ function drawSumner(x,y){
   ctx.beginPath();ctx.moveTo(-7,-3);ctx.lineTo(-4,-11);ctx.moveTo(7,-3);ctx.lineTo(4,-11);ctx.stroke();
   // towel over shoulder
   ctx.fillStyle='#d2cdbb';ctx.save();ctx.rotate(.32);ctx.fillRect(7,-13,5,13);ctx.restore();
-  // ── Head ──
+  // ── Head ── (bald — he lets the beard do the talking)
   const hy=-17+bob*.3;
   ctx.fillStyle='#f0c090';ctx.beginPath();ctx.arc(0,hy,11,0,Math.PI*2);ctx.fill();
-  // full head of hair — swept back with a slight quiff, hairline above the eyes
-  ctx.fillStyle='#6a4326';
-  ctx.beginPath();
-  ctx.moveTo(-10.5,hy-2);
-  ctx.quadraticCurveTo(-13,hy-12,-3,hy-13);
-  ctx.quadraticCurveTo(0,hy-15.5,4,hy-12);
-  ctx.quadraticCurveTo(13,hy-11,10.5,hy-2);
-  ctx.quadraticCurveTo(6,hy-6,0,hy-5);
-  ctx.quadraticCurveTo(-6,hy-6,-10.5,hy-2);
-  ctx.closePath();ctx.fill();
-  // sideburns behind the ears
-  ctx.beginPath();ctx.arc(-10,hy,3,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(10,hy,3,0,Math.PI*2);ctx.fill();
-  // hair sheen
-  ctx.fillStyle='#7d5230';
-  ctx.beginPath();ctx.ellipse(-3,hy-9,4,2.4,-.3,0,Math.PI*2);ctx.fill();
+  // soft scalp highlight so the bald head catches the hearth light
+  const sh=ctx.createRadialGradient(-3,hy-5,1,-3,hy-5,9);
+  sh.addColorStop(0,'rgba(255,240,210,.55)');sh.addColorStop(1,'rgba(255,240,210,0)');
+  ctx.fillStyle=sh;ctx.beginPath();ctx.arc(-3,hy-5,9,0,Math.PI*2);ctx.fill();
   // rosy cheeks
   ctx.fillStyle='rgba(232,120,90,.4)';
   ctx.beginPath();ctx.arc(-6,hy+2,2.6,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(6,hy+2,2.6,0,Math.PI*2);ctx.fill();
-  // eyes
-  ctx.fillStyle='#2a2018';
-  ctx.beginPath();ctx.arc(-4,hy-1,1.6,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(4,hy-1,1.6,0,Math.PI*2);ctx.fill();
-  // big bushy mustache
+  // ── Beard — frames the jaw to match his mustache; leaves a gap for the mouth ──
   ctx.fillStyle='#5a3a1e';
-  ctx.beginPath();ctx.moveTo(-7,hy+4);ctx.quadraticCurveTo(0,hy+7,7,hy+4);
-  ctx.quadraticCurveTo(3,hy+8,0,hy+7.5);ctx.quadraticCurveTo(-3,hy+8,-7,hy+4);ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-9.5,hy+0.5);
+  ctx.quadraticCurveTo(-11,hy+7,-6,hy+11);
+  ctx.quadraticCurveTo(0,hy+14,6,hy+11);
+  ctx.quadraticCurveTo(11,hy+7,9.5,hy+0.5);
+  ctx.quadraticCurveTo(6,hy+6,2.6,hy+7);
+  ctx.quadraticCurveTo(0,hy+7.4,-2.6,hy+7);
+  ctx.quadraticCurveTo(-6,hy+6,-9.5,hy+0.5);
+  ctx.closePath();ctx.fill();
+  // beard strand texture
+  ctx.strokeStyle='rgba(122,82,48,.55)';ctx.lineWidth=1;ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-5,hy+4.5);ctx.lineTo(-4,hy+10);
+  ctx.moveTo(0,hy+6.5);ctx.lineTo(0,hy+12.5);
+  ctx.moveTo(5,hy+4.5);ctx.lineTo(4,hy+10);
+  ctx.stroke();
+  // soft, friendly eyebrows (gently raised — welcoming, not blank)
+  ctx.strokeStyle='#6a4326';ctx.lineWidth=1.3;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(-6.4,hy-3.7);ctx.quadraticCurveTo(-4,hy-4.7,-1.6,hy-3.9);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(1.6,hy-3.9);ctx.quadraticCurveTo(4,hy-4.7,6.4,hy-3.7);ctx.stroke();
+  // warm eyes — brown with a catchlight so they read as kindly, not dead-black dots
+  ctx.fillStyle='#3a2a1c';
+  ctx.beginPath();ctx.arc(-4,hy-1,1.8,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(4,hy-1,1.8,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.beginPath();ctx.arc(-3.3,hy-1.7,.7,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(4.7,hy-1.7,.7,0,Math.PI*2);ctx.fill();
+  // big bushy mustache — ends curl UP for a jovial look
+  ctx.fillStyle='#5a3a1e';
+  ctx.beginPath();
+  ctx.moveTo(-7.5,hy+2.6);
+  ctx.quadraticCurveTo(-3,hy+4.4,0,hy+4);
+  ctx.quadraticCurveTo(3,hy+4.4,7.5,hy+2.6);
+  ctx.quadraticCurveTo(3.5,hy+5.8,1.4,hy+5);
+  ctx.quadraticCurveTo(0,hy+5.4,-1.4,hy+5);
+  ctx.quadraticCurveTo(-3.5,hy+5.8,-7.5,hy+2.6);
+  ctx.closePath();ctx.fill();
+  // a gentle smile peeking just beneath the mustache
+  ctx.strokeStyle='#b06848';ctx.lineWidth=1.3;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(0,hy+5.2,2.3,.2*Math.PI,.8*Math.PI);ctx.stroke();
   // ── Foaming tankard, raised ──
   const mx=16,my=1+bob;
   ctx.fillStyle='#caa15a';ctx.fillRect(mx-4,my-5,8,11);
@@ -1255,6 +1326,7 @@ function buildBossRoom(realm,map,torches){
   if(realm.id==='forsaken') buildLichRoom(map,bx,by,bw,bh,decos);
   else if(realm.id==='mountain') buildWyrmRoom(map,bx,by,bw,bh,decos);
   else if(realm.id==='castle') buildDragonRoom(map,bx,by,bw,bh,decos);
+  else if(realm.id==='ice') buildIceRoom(map,bx,by,bw,bh,decos);
 
   return{room,playerStart,bossWx,bossWy,decos};
 }
@@ -1296,6 +1368,12 @@ function buildWyrmRoom(map,bx,by,bw,bh,decos){
 }
 
 // ── DRAGON LORD — Throne Room ─────────────────────────────
+function buildIceRoom(map,bx,by,bw,bh,decos){
+  // Open frozen arena — kept clear so the roaming Rimewarden and its sweeping ice walls
+  // always have lanes. (Solid pillars caused the boss to spawn wedged.) Atmosphere comes
+  // from the realm's frost visuals + ambient snow rather than cover blocks.
+}
+
 function buildDragonRoom(map,bx,by,bw,bh,decos){
   // Throne dais — 3×2 solid block at top centre
   const throneX=bx+Math.floor(bw/2)-1, throneY=by+1;
@@ -1710,7 +1788,7 @@ function drawBossDecos(decos){
 // ═══════════════════════════════════════
 // ── ARCHETYPE HELPERS ───────────────────────────────────────────
 function mkEnemyByType(type,realm,x,y){
-  const sc=1+(G.curLvNum||0)*.3;
+  const sc=(1+(G.curLvNum||0)*.3)*globalScale();
   // grunt_heavy and grunt_light go through mkGrunt
   if(type==='grunt_heavy')return mkGrunt(realm,true,x,y);
   if(type==='grunt_light')return mkGrunt(realm,false,x,y);
@@ -1907,7 +1985,7 @@ function genLevel(realm,lvNum,isBoss){
       if(Math.abs(gdx)+Math.abs(gdy)<2)continue;
       const gtx=lr.cx+gdx,gty=lr.cy+gdy;
       if(map[gty]?.[gtx]===TFLOOR){
-        const sc=1+(G.curLvNum||0)*.25;
+        const sc=(1+(G.curLvNum||0)*.25)*globalScale();
         golemEnemies.push({name:'Golem',type:'golem',col:'#887766',out:'#554433',
           hp:Math.floor(450*sc),maxHp:Math.floor(450*sc),atk:Math.floor(32*sc),
           spd:52,xp:40,g:[40,80],sz:.95,
@@ -1980,13 +2058,6 @@ function genLevel(realm,lvNum,isBoss){
   // Protect a 1-tile radius around the exit portal so nothing covers it
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)occ.add(`${lr.cx+dx},${lr.cy+dy}`);
   switches.forEach(sw=>occ.add(`${sw.x},${sw.y}`));
-
-  // Runestone in 2nd-to-last room
-  if(rooms.length>3){
-    const sr=rooms[rooms.length-2];
-    occ.add(`${sr.cx},${sr.cy}`);
-    items.push({type:'rune',x:(sr.cx+.5)*TL,y:(sr.cy+.5)*TL,realm:realm.id,bob:Math.random()*Math.PI*2});
-  }
 
   // Gold in rooms (small amounts)
   rooms.forEach((r,i)=>{
@@ -2209,7 +2280,7 @@ function genLevel(realm,lvNum,isBoss){
   }
 
   // Pre-place regular (non-grunt) enemies in middle rooms
-  const sc=1+(G.curLvNum||0)*.3;
+  const sc=(1+(G.curLvNum||0)*.3)*globalScale();
   mrooms.forEach(r=>{
     if(r.archetype)return; // archetype rooms handle their own enemies
     const count=rand(2,4);
@@ -2255,7 +2326,7 @@ function genLevel(realm,lvNum,isBoss){
 const BARREL_COLS={forsaken:'#2a1a0e',mountain:'#3a2810',castle:'#4a3520'};
 
 function genBarrels(map,rooms,realm,occ=new Set()){
-  const shape=realm.id==='forsaken'?'urn':realm.id==='mountain'?'crate':'chest';
+  const shape=realm.id==='forsaken'?'urn':realm.id==='mountain'?'crate':realm.id==='ice'?'iceblock':'chest';
   const barrels=[];
   rooms.forEach((r,ri)=>{
     if(ri===0||ri===rooms.length-1)return; // skip start room & exit room
@@ -2402,9 +2473,28 @@ function drawBarrels(){
       [[-hw,-hw],[hw,-hw]].forEach(([bx,by])=>bolt(bx,by));           // top corners
       [[-hw,-hw+th],[hw,-hw+th],[-hw,hw],[hw,hw]].forEach(([bx,by])=>bolt(bx,by)); // front corners
 
+    } else if(b.shape==='iceblock'){
+      // ── FROSTLANDS ICE BLOCK — translucent faceted ice, faintly glowing ──
+      const hw=TL*.3;
+      ctx.fillStyle='rgba(0,0,0,.3)';
+      ctx.beginPath();ctx.ellipse(TL*.06,hw+TL*.06,hw,TL*.08,0,0,Math.PI*2);ctx.fill();
+      const ig=ctx.createLinearGradient(-hw,-hw,hw,hw);
+      ig.addColorStop(0,'rgba(190,230,250,.92)');ig.addColorStop(.5,'rgba(120,180,220,.85)');ig.addColorStop(1,'rgba(70,120,165,.9)');
+      ctx.fillStyle=ig;
+      ctx.beginPath();ctx.moveTo(-hw,-hw*.7);ctx.lineTo(-hw*.6,-hw);ctx.lineTo(hw,-hw*.8);ctx.lineTo(hw*.8,hw);ctx.lineTo(-hw*.85,hw*.9);ctx.closePath();ctx.fill();
+      // facet highlights
+      ctx.strokeStyle='rgba(235,250,255,.7)';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.moveTo(-hw*.6,-hw);ctx.lineTo(-hw*.2,-hw*.1);ctx.lineTo(hw*.8,hw);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(-hw*.2,-hw*.1);ctx.lineTo(hw,-hw*.8);ctx.stroke();
+      // inner glint
+      ctx.fillStyle='rgba(255,255,255,.5)';
+      ctx.beginPath();ctx.ellipse(-hw*.25,-hw*.25,TL*.05,TL*.09,.4,0,Math.PI*2);ctx.fill();
+      // frost-glow rim
+      ctx.strokeStyle='rgba(150,210,240,.55)';ctx.lineWidth=2;ctx.shadowColor='#9cd4ee';ctx.shadowBlur=6;
+      ctx.beginPath();ctx.moveTo(-hw,-hw*.7);ctx.lineTo(-hw*.6,-hw);ctx.lineTo(hw,-hw*.8);ctx.lineTo(hw*.8,hw);ctx.lineTo(-hw*.85,hw*.9);ctx.closePath();ctx.stroke();
+      ctx.shadowBlur=0;
+
     } else {
-      // Castle: ornate chest — rectangular with gold trim
-      const hw=TL*.32,hh=TL*.22;
       ctx.fillStyle='#2a1e10';ctx.fillRect(-hw,-hh,hw*2,hh*1.6);
       ctx.fillStyle='#1e1408';ctx.fillRect(-hw,-hh,hw*2,hh*.55); // lid
       ctx.strokeStyle='#c8a030';ctx.lineWidth=1.5;
@@ -2569,6 +2659,7 @@ function updateBoss(dt){
   if(rid==='forsaken')    updateLich(b,p,dt);
   else if(rid==='mountain') updateWyrm(b,p,dt);
   else if(rid==='castle')   updateDragon(b,p,dt);
+  else if(rid==='ice')      updateRimewarden(b,p,dt);
 
   // Shared: melee contact — applies to whichever player is touching the boss
   const chargeMul=b.bossState?.mode==='charge'?2.5:1;
@@ -2641,6 +2732,23 @@ function onBossPhase(b,phase){
         let ex=b.x,ey=b.y;
         for(let att=0;att<12;att++){
           const ba=a+i*2.1+att*.5;
+          const cx=b.x+Math.cos(ba)*TL*2.5,cy=b.y+Math.sin(ba)*TL*2.5;
+          if(!solid(G.lv.map,cx,cy)){ex=cx;ey=cy;break;}
+        }
+        G.lv.enemies.push(mkBossMinion(G.curRealm,ex,ey));
+      }
+    }
+  } else if(rid==='ice'){
+    // RIMEWARDEN — a frost shockwave bursts outward; later phases call frozen minions
+    addShake(6);
+    for(let i=0;i<24;i++){const a=i/24*Math.PI*2;
+      G.parts.push({x:b.x,y:b.y,vx:Math.cos(a)*160,vy:Math.sin(a)*160,life:.6,ml:.6,sz:4,col:i%2?'#cfeeff':'#9cd4ee'});}
+    if(phase>=3&&G.curRealm){
+      const a=Math.random()*Math.PI*2;
+      for(let i=0;i<2;i++){
+        let ex=b.x,ey=b.y;
+        for(let att=0;att<12;att++){
+          const ba=a+i*3.1+att*.5;
           const cx=b.x+Math.cos(ba)*TL*2.5,cy=b.y+Math.sin(ba)*TL*2.5;
           if(!solid(G.lv.map,cx,cy)){ex=cx;ey=cy;break;}
         }
@@ -2812,12 +2920,18 @@ function updateLich(b,p,dt){
 // TWALL (so collision + rendering come for free) and originals saved for a clean collapse.
 function wyrmRaiseMaze(s){
   const map=G.lv.map; s.mazeTiles=[];
-  const y0=BOSS_BY+2, y1=BOSS_BY+BOSS_BH-3;
-  const fences=[{x:13,gap:'bottom'},{x:17,gap:'top'},{x:21,gap:'bottom'}];
+  const y0=BOSS_BY+1, y1=BOSS_BY+BOSS_BH-2, H=y1-y0;
+  // Full-height fences (no open margin to skirt along the top or bottom). Each has a single
+  // gap, staggered low/high/mid/low so the only route weaves up and down across the arena.
+  const fences=[
+    {x:13,gapY:y1-3},
+    {x:16,gapY:y0},
+    {x:19,gapY:y0+Math.floor(H*0.45)},
+    {x:22,gapY:y1-3},
+  ];
   fences.forEach(f=>{
     for(let y=y0;y<=y1;y++){
-      if(f.gap==='top'&&y<=y0+2)continue;
-      if(f.gap==='bottom'&&y>=y1-2)continue;
+      if(y>=f.gapY&&y<f.gapY+3)continue; // leave a 3-tile gap open
       if(map[y]&&map[y][f.x]!==undefined){ s.mazeTiles.push([f.x,y,map[y][f.x]]); map[y][f.x]=TWALL; spawnP(f.x*TL+TL/2,y*TL+TL/2,'#8a6a44',4); }
     }
   });
@@ -2859,8 +2973,10 @@ function updateWyrm(b,p,dt){
       // erupt under the player's current position — telegraphed, so keep moving
       addFT('BURROW!',p.x,p.y-TL*2,'#cc8844');
       addWarning(p.x,p.y,{delay:.6,r:TL*1.8,atk:b.atk*1.5,col:'#cc7733',hazardR:TL*1.8,hazardDur:.6});
+      s.lastEX=p.x;s.lastEY=p.y; // remember where the last strike landed
       s.eruptCount--; s.eruptTimer=.62;
-      if(s.eruptCount<=0){s.mode='burrow_surface';s.timer=.45;}
+      // On the final eruption, the Wyrm rises out of THAT crater (not where it dived)
+      if(s.eruptCount<=0){b.x=s.lastEX;b.y=s.lastEY;s.mode='burrow_surface';s.timer=.45;}
     }
     return;
   }
@@ -2878,6 +2994,7 @@ function updateWyrm(b,p,dt){
     if(s.timer<=0){
       s.mode='lab_channel';
       s.channelMax=[0,8,8,6.5,5.5][b.phase]||7; s.channelTimer=s.channelMax;
+      s.chanHp=b.hp; // baseline — ANY damage taken now interrupts the channel
       b.invuln=0; b._untargetable=false; // damageable while channelling — ranged can chip through gaps
     }
     return;
@@ -2894,12 +3011,10 @@ function updateWyrm(b,p,dt){
       do{wx=(BOSS_BX+2+Math.random()*(BOSS_BW-4))*TL;wy=(BOSS_BY+2+Math.random()*(BOSS_BH-4))*TL;tries++;}while(solid(G.lv.map,wx,wy)&&tries<25);
       addWarning(wx,wy,{delay:1.0,r:TL*1.1,atk:b.atk*1.1,col:'#aa7744',hazardR:TL*1.1,hazardDur:1.0});
     }
-    // reaching the Wyrm interrupts the channel — the maze pays off
-    const list=(G.players&&G.players.length)?G.players:[G.p];
-    const reached=list.some(pl=>pl&&pl.hp>0&&dist(b,pl)<TL*2.8);
-    if(reached){
+    // ANY hit on the Wyrm interrupts the channel — land a shot through the maze gaps or reach it
+    if(b.hp < (s.chanHp||b.hp) - 0.5){
       addFT('INTERRUPTED!',b.x,b.y-TL*b.sz*1.5,'#66ff99');
-      b.hp=Math.max(1,b.hp-b.maxHp*0.04); b.hitFlash=.4; addShake(7);
+      b.hitFlash=.4; addShake(7);
       wyrmCollapseMaze(s); s.mode='recover'; s.timer=1.0; return;
     }
     if(s.channelTimer<=0){
@@ -3180,6 +3295,237 @@ function fireBossProj(b,dx,dy,opts={}){
   G.projs.push({x:b.x,y:b.y,vx:dx*speed,vy:dy*speed,life:3,isBoss:true,atk,col,trail:[],isTurbo:false});
 }
 
+// ── SWEEPING ICE WALL (Rimewarden) ───────────────────────────────────────
+// A wall of destructible ice blocks advances across the arena from one edge. Each block has
+// HP; the player must FOCUS ONE DOWN to open a gap and slip through before it bulldozes them
+// into the far wall. axis 'x' = vertical wall travelling horizontally; 'y' = the reverse.
+function spawnIceWall(b){
+  const horiz=Math.random()<.5;
+  const dir=Math.random()<.5?1:-1;
+  const blocks=[];
+  let wall;
+  if(horiz){
+    for(let ty=BOSS_BY+2;ty<BOSS_BY+BOSS_BH-2;ty++)blocks.push({i:ty,alive:true,hp:36,maxHp:36,hitFlash:0});
+    const x0=dir>0?(BOSS_BX+1.5):(BOSS_BX+BOSS_BW-1.5);
+    wall={axis:'x',dir,pos:x0*TL,blocks,speed:TL*2.6,atk:b.atk,life:12};
+  } else {
+    for(let tx=BOSS_BX+2;tx<BOSS_BX+BOSS_BW-2;tx++)blocks.push({i:tx,alive:true,hp:36,maxHp:36,hitFlash:0});
+    const y0=dir>0?(BOSS_BY+1.5):(BOSS_BY+BOSS_BH-1.5);
+    wall={axis:'y',dir,pos:y0*TL,blocks,speed:TL*2.6,atk:b.atk,life:12};
+  }
+  G.lv.iceWall=wall;
+  addFT('ICE WALL!',b.x,b.y-TL*b.sz*1.5,'#9cd4ee');
+  addShake(3);
+}
+function iceShatter(w,blk){
+  const wx=w.axis==='x'?w.pos:(blk.i+.5)*TL;
+  const wy=w.axis==='x'?(blk.i+.5)*TL:w.pos;
+  for(let i=0;i<12;i++){const a=Math.random()*Math.PI*2,sp=80+Math.random()*120;
+    G.parts.push({x:wx,y:wy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.5,ml:.5,sz:3+Math.random()*3,col:'#cfeeff'});}
+  addShake(2);
+}
+function updateIceWall(dt){
+  const w=G.lv?.iceWall;if(!w)return;
+  const host=!MP.enabled||MP.isHost;
+  if(host){
+    w.life-=dt;
+    w.pos+=w.dir*w.speed*dt;
+    const lo=(w.axis==='x'?BOSS_BX:BOSS_BY)+1, hi=(w.axis==='x'?BOSS_BX+BOSS_BW:BOSS_BY+BOSS_BH)-1;
+    if(w.life<=0||w.pos<lo*TL||w.pos>hi*TL||w.blocks.every(bl=>!bl.alive)){G.lv.iceWall=null;return;}
+    // Player projectiles chip the blocks
+    G.projs=G.projs.filter(pr=>{
+      if(pr.isBoss)return true;
+      const along=w.axis==='x'?pr.x:pr.y;
+      if(Math.abs(along-w.pos)>TL*.6)return true;
+      const perp=w.axis==='x'?Math.floor(pr.y/TL):Math.floor(pr.x/TL);
+      const blk=w.blocks.find(bl=>bl.alive&&bl.i===perp);
+      if(blk){blk.hp-=(pr.atk||10);blk.hitFlash=.12;if(blk.hp<=0){blk.alive=false;iceShatter(w,blk);}return false;}
+      return true;
+    });
+    // Melee — an attacking player adjacent to a block grinds it down
+    eachPlayer(pl=>{
+      if(!pl.attacking)return;
+      const along=w.axis==='x'?pl.x:pl.y;
+      if(Math.abs(along-w.pos)>TL*1.15)return;
+      const perp=w.axis==='x'?Math.floor(pl.y/TL):Math.floor(pl.x/TL);
+      const blk=w.blocks.find(bl=>bl.alive&&bl.i===perp);
+      if(blk){blk.hp-=(pl.atk||10)*3.2*dt;blk.hitFlash=.12;if(blk.hp<=0){blk.alive=false;iceShatter(w,blk);}}
+    });
+    // Collision: an intact block in the player's lane bulldozes them along (chip damage)
+    eachPlayer(pl=>{
+      const along=w.axis==='x'?pl.x:pl.y;
+      if(Math.abs(along-w.pos)>TL*.5)return;
+      const perp=w.axis==='x'?Math.floor(pl.y/TL):Math.floor(pl.x/TL);
+      const blk=w.blocks.find(bl=>bl.alive&&bl.i===perp);
+      if(blk&&pl.invuln<=0){
+        if(w.axis==='x'){pl.kbVx=w.dir*300;pl.kbVy=0;}else{pl.kbVy=w.dir*300;pl.kbVx=0;}
+        pl.kbTimer=.18;
+        pl.hp-=w.atk*dt*4;
+        if(pl===G.p){G.hurtFlash=Math.min(1,G.hurtFlash+.35);pl._spikeSnd=(pl._spikeSnd||0)-dt;if(pl._spikeSnd<=0){try{SFX.playerHurt();}catch(e){}pl._spikeSnd=.4;}}
+        if(pl.hp<=0)onDeath(pl);
+      }
+    });
+  } else {
+    // CLIENT: wall position + block states come from the host sync; the client still feels
+    // the bulldoze locally on its own player (host owns the HP damage, synced separately).
+    const pl=G.p;
+    const along=w.axis==='x'?pl.x:pl.y;
+    if(Math.abs(along-w.pos)<=TL*.5&&pl.invuln<=0){
+      const perp=w.axis==='x'?Math.floor(pl.y/TL):Math.floor(pl.x/TL);
+      const blk=w.blocks.find(bl=>bl.alive&&bl.i===perp);
+      if(blk){
+        if(w.axis==='x'){pl.kbVx=w.dir*300;pl.kbVy=0;}else{pl.kbVy=w.dir*300;pl.kbVx=0;}
+        pl.kbTimer=.18;G.hurtFlash=Math.min(1,G.hurtFlash+.18);
+      }
+    }
+  }
+  w.blocks.forEach(bl=>{if(bl.hitFlash>0)bl.hitFlash-=dt;});
+}
+function drawIceWall(){
+  const w=G.lv?.iceWall;if(!w)return;
+  // Leading-edge frost glow (telegraph of travel)
+  ctx.save();
+  w.blocks.forEach(bl=>{
+    if(!bl.alive)return;
+    const wx=w.axis==='x'?w.pos:(bl.i+.5)*TL;
+    const wy=w.axis==='x'?(bl.i+.5)*TL:w.pos;
+    const f=Math.max(0,bl.hp/bl.maxHp);
+    ctx.save();ctx.translate(wx,wy);
+    ctx.shadowColor='#9cd4ee';ctx.shadowBlur=10;
+    ctx.fillStyle=bl.hitFlash>0?'#ffffff':`rgba(150,200,235,${.5+.32*f})`;
+    ctx.fillRect(-TL*.48,-TL*.48,TL*.96,TL*.96);
+    ctx.strokeStyle='rgba(225,245,255,.85)';ctx.lineWidth=1.5;ctx.strokeRect(-TL*.46,-TL*.46,TL*.92,TL*.92);
+    ctx.shadowBlur=0;
+    // inner shine
+    ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(-TL*.36,-TL*.36,TL*.28,TL*.28);
+    // cracks as it weakens
+    if(f<.66){ctx.strokeStyle='rgba(50,80,110,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-TL*.3,-TL*.2);ctx.lineTo(TL*.12,TL*.3);ctx.stroke();}
+    if(f<.33){ctx.beginPath();ctx.moveTo(TL*.22,-TL*.32);ctx.lineTo(-TL*.1,TL*.12);ctx.stroke();}
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ── THE RIMEWARDEN (Frostlands boss — a yeti) ──────────────────────────
+// Signature: FREEZE. Telegraphed frost-rings briefly freeze a player in place if caught,
+// punishing sloppy movement. Backed by falling icicles, ice-shard volleys, a charging slam,
+// and a phase-4 blizzard whiteout. The arena floor is slippery (realm gimmick), so positioning
+// under pressure is the whole fight.
+function updateRimewarden(b,p,dt){
+  if(!b.bossState) b.bossState={mode:'roam',timer:1.6,repoTimer:0,target:null,blizzTimer:16,
+    breathLeft:0,breathShot:0,breathAng:0,breathTotal:8};
+  const s=b.bossState;
+  b.vx=b.vx||0;b.vy=b.vy||0;
+  const d=dist(b,p)||1;
+  const nextTimer=()=>[0,2.5,2.1,1.7,1.4][b.phase];
+
+  // ── CHARGE: a committed straight-line slam (phase 3+) ──
+  if(s.mode==='charge_windup'){
+    b.vx=lerp(b.vx,0,10*dt);b.vy=lerp(b.vy,0,10*dt);b.x+=b.vx*dt;b.y+=b.vy*dt;
+    for(let i=0;i<2;i++)G.parts.push({x:b.x+(Math.random()-.5)*TL*1.4,y:b.y+(Math.random()-.5)*TL*1.4,
+      vx:(Math.random()-.5)*30,vy:-20-Math.random()*30,life:.4,ml:.4,sz:3+Math.random()*3,col:'#cfeeff'});
+    s.timer-=dt;
+    if(s.timer<=0){const a=Math.atan2(s.chargeDy,s.chargeDx);b.vx=Math.cos(a)*470;b.vy=Math.sin(a)*470;s.mode='charge';s.timer=0.6;addShake(5);}
+    return;
+  }
+  if(s.mode==='charge'){
+    const nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;
+    if(!solid(G.lv.map,nx,b.y))b.x=nx;else{b.vx*=-.3;addShake(8);}
+    if(!solid(G.lv.map,b.x,ny))b.y=ny;else{b.vy*=-.3;addShake(8);}
+    for(let i=0;i<2;i++)G.parts.push({x:b.x+(Math.random()-.5)*TL,y:b.y+(Math.random()-.5)*TL,
+      vx:(Math.random()-.5)*60,vy:(Math.random()-.5)*60,life:.3,ml:.3,sz:4,col:'#dff0ff'});
+    s.timer-=dt;
+    if(s.timer<=0){s.mode='roam';s.timer=nextTimer();b.vx*=.2;b.vy*=.2;s.repoTimer=0;}
+    return;
+  }
+
+  // ── FROST BREATH: a brief windup, then a telegraphed cone of AOE zones to dodge ──
+  if(s.mode==='breath'){
+    b.vx=lerp(b.vx,0,8*dt);b.vy=lerp(b.vy,0,8*dt);b.x+=b.vx*dt;b.y+=b.vy*dt;
+    // gather frost at the maw as a wind-up tell
+    for(let i=0;i<2;i++){const a=s.breathAng+(Math.random()-.5)*0.8;
+      G.parts.push({x:b.x+Math.cos(a)*TL*1.4,y:b.y+Math.sin(a)*TL*1.4,vx:-Math.cos(a)*70,vy:-Math.sin(a)*70,life:.3,ml:.3,sz:3+Math.random()*2,col:'#bfe8ff'});}
+    s.breathWind-=dt;
+    if(s.breathWind<=0){
+      // Cast the cone — a fan of telegraphed AOE zones expanding toward the player.
+      // Built from warnings so it reads as a real "get out of the cone" attack and syncs in co-op.
+      const base=s.breathAng, rings=b.phase>=4?5:4;
+      for(let r=1;r<=rings;r++){
+        const distOut=TL*(1.1*r+0.5), spread=0.20*r, cols=r;
+        for(let c=0;c<=cols;c++){
+          const off=cols?(c/cols-0.5)*spread*2:0, a=base+off;
+          const wx=b.x+Math.cos(a)*distOut, wy=b.y+Math.sin(a)*distOut;
+          if(!solid(G.lv.map,wx,wy))addWarning(wx,wy,{delay:0.7,r:TL*0.92,atk:b.atk,col:'#7fd8ff',hazardDur:0.5});
+        }
+      }
+      addShake(4);
+      s.mode='roam';s.timer=nextTimer();
+    }
+    return;
+  }
+
+  // ── BLIZZARD ambient (phase 4) — whiteout + blind shard spray ──
+  if(b.phase>=4){
+    s.blizzTimer-=dt;
+    if(s.blizzTimer<=0){s.blizzTimer=14;b._blizzard=4.5;addFT('BLIZZARD!',b.x,b.y-TL*b.sz*1.5,'#ffffff');addShake(4);}
+  }
+  if((b._blizzard||0)>0){
+    b._blizzard-=dt;s._blizzShot=(s._blizzShot||0)-dt;
+    if(s._blizzShot<=0&&d>0){s._blizzShot=0.55;const a=Math.atan2(p.y-b.y,p.x-b.x)+(Math.random()-.5)*.7;fireBossProj(b,Math.cos(a),Math.sin(a),{speed:150,col:'#dff0ff',atk:b.atk*.4});}
+  }
+
+  // ── MOVEMENT: constant roam, circling the player at mid-range (never a turret) ──
+  s.repoTimer-=dt;
+  if(!s.target||s.repoTimer<=0){
+    const ang=Math.atan2(b.y-p.y,b.x-p.x)+(Math.random()-.5)*2.4;
+    const rad=TL*(3.5+Math.random()*2);
+    const tx=clamp(p.x+Math.cos(ang)*rad,(BOSS_BX+2)*TL,(BOSS_BX+BOSS_BW-2)*TL);
+    const ty=clamp(p.y+Math.sin(ang)*rad,(BOSS_BY+2)*TL,(BOSS_BY+BOSS_BH-2)*TL);
+    s.target={x:tx,y:ty};s.repoTimer=1.4+Math.random()*1.1;
+  }
+  const spd=[0,72,92,116,140][b.phase];
+  const td=dist(b,s.target)||1;
+  b.vx=lerp(b.vx,(s.target.x-b.x)/td*spd,3*dt);
+  b.vy=lerp(b.vy,(s.target.y-b.y)/td*spd,3*dt);
+  const mx=b.x+b.vx*dt,my=b.y+b.vy*dt;
+  if(!solid(G.lv.map,mx,b.y))b.x=mx;else s.repoTimer=0;
+  if(!solid(G.lv.map,b.x,my))b.y=my;else s.repoTimer=0;
+
+  // ── ATTACK SELECTOR: exactly one telegraphed attack at a time (no stacking) ──
+  s.timer-=dt;
+  if(s.timer<=0){
+    s.timer=nextTimer();
+    const roll=Math.random();
+    if(b.phase>=3&&d>TL*3&&roll<.22){
+      s.chargeDx=p.x-b.x;s.chargeDy=p.y-b.y;s.mode='charge_windup';s.timer=0.7;
+      addFT('CHARGE!',b.x,b.y-TL*b.sz*1.5,'#e8f4ff');return;
+    } else if(roll<.46){
+      s.mode='breath';s.breathWind=0.5;
+      s.breathAng=Math.atan2(p.y-b.y,p.x-b.x);
+      addFT('FROST BREATH!',b.x,b.y-TL*b.sz*1.5,'#bfe8ff');return;
+    } else if(b.phase>=2&&roll<.66){
+      // FREEZE RING — single, clearly telegraphed
+      addFT('FREEZE!',b.x,b.y-TL*b.sz*1.4,'#66ccff');
+      const cx=p.x,cy=p.y,fr=TL*2.1;
+      for(let i=0;i<22;i++){const a=i/22*Math.PI*2;G.parts.push({x:cx+Math.cos(a)*fr*1.5,y:cy+Math.sin(a)*fr*1.5,vx:-Math.cos(a)*130,vy:-Math.sin(a)*130,life:.95,ml:.95,sz:4,col:'#aee0ff'});}
+      addWarning(cx,cy,{delay:0.95,r:fr,atk:b.atk*.5,col:'#66ccff',hazardDur:0.3});
+      setTimeout(()=>{if(!G.lv?.boss)return;eachPlayer(pl=>{if(Math.hypot(pl.x-cx,pl.y-cy)<fr&&pl.invuln<=0){pl.frozen=Math.max(pl.frozen||0,b.phase>=4?1.3:1.0);if(pl===G.p){addFT('FROZEN!',pl.x,pl.y-TL,'#aee0ff');try{SFX.spike();}catch(e){}}for(let i=0;i<14;i++){const a=Math.random()*Math.PI*2;G.parts.push({x:pl.x,y:pl.y,vx:Math.cos(a)*90,vy:Math.sin(a)*90,life:.5,ml:.5,sz:4,col:'#cfeeff'});}}});},950);
+    } else if(roll<.83){
+      // SWEEPING ICE WALL — focus a block down to open a gap and slip through
+      if(!G.lv.iceWall) spawnIceWall(b);
+      else { // a wall's already crossing — throw a shard volley instead
+        const n=b.phase>=4?14:b.phase>=3?11:8,off=Math.random()*Math.PI*2;
+        for(let i=0;i<n;i++){const a=off+i/n*Math.PI*2;fireBossProj(b,Math.cos(a),Math.sin(a),{speed:165,col:'#aee0ff',atk:b.atk*.55});}
+      }
+    } else {
+      // SHARD VOLLEY — radial burst
+      const n=b.phase>=4?14:b.phase>=3?11:8,off=Math.random()*Math.PI*2;
+      for(let i=0;i<n;i++){const a=off+i/n*Math.PI*2;fireBossProj(b,Math.cos(a),Math.sin(a),{speed:165,col:'#aee0ff',atk:b.atk*.55});}
+      addShake(3);
+    }
+  }
+}
+
 // ═══════════════════════════════════════
 // START LEVEL / BOSS
 // ═══════════════════════════════════════
@@ -3255,6 +3601,60 @@ function drawSummary(){
   ctx.fillText('tap anywhere to continue',W/2,py+ph-4);
 }
 
+// ── BOSS SELECT — choose a single boss or the full gauntlet when entering the Trial ──
+function openBossSelect(){
+  MODE='bossSelect';
+  G.bossSelect={rects:[]};
+  document.getElementById('hud').classList.add('hidden');
+}
+function drawBossSelect(){
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='rgba(0,0,0,.8)';ctx.fillRect(0,0,W,H);
+  const bosses=REALMS.slice();
+  const nOpts=bosses.length+2; // gauntlet + each boss + back
+  const pw=Math.min(W-40,470);
+  const rowH=44, gap=9, headH=86;
+  const ph=Math.min(H-40, headH + nOpts*(rowH+gap) + 26);
+  const px=(W-pw)/2, py=(H-ph)/2;
+  const col='#ff7766';
+  ctx.fillStyle='rgba(10,5,16,.97)';ctx.beginPath();ctx.roundRect(px,py,pw,ph,12);ctx.fill();
+  ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(px,py,pw,ph,12);ctx.stroke();
+  ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.font=`bold ${Math.floor(pw*.06)}px Cinzel,serif`;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=12;
+  ctx.fillText('Trial of Champions',W/2,py+18);ctx.shadowBlur=0;
+  ctx.font=`${Math.floor(pw*.036)}px Cinzel,serif`;ctx.fillStyle='rgba(200,190,220,.7)';
+  ctx.fillText('Choose your challenge',W/2,py+18+Math.floor(pw*.06)+8);
+
+  const rects=[];let ry=py+headH;
+  const mkBtn=(label,sub,action,realmId,hex)=>{
+    const bx=px+20,bw=pw-40;
+    ctx.fillStyle=hexA(hex,.16);ctx.beginPath();ctx.roundRect(bx,ry,bw,rowH,8);ctx.fill();
+    ctx.strokeStyle=hex;ctx.lineWidth=1.4;ctx.beginPath();ctx.roundRect(bx,ry,bw,rowH,8);ctx.stroke();
+    ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.font=`bold ${Math.floor(pw*.04)}px Cinzel,serif`;ctx.fillStyle='#fff';
+    ctx.fillText(label,bx+16,ry+rowH/2-(sub?7:0));
+    if(sub){ctx.font=`${Math.floor(pw*.029)}px Cinzel,serif`;ctx.fillStyle='rgba(190,180,210,.65)';ctx.fillText(sub,bx+16,ry+rowH/2+9);}
+    rects.push({x:bx,y:ry,w:bw,h:rowH,action,realmId});
+    ry+=rowH+gap;
+  };
+  mkBtn('⚔  All Bosses — Gauntlet',`Fight all ${bosses.length} back-to-back`,'all',null,'#ff7766');
+  bosses.forEach(r=>mkBtn(r.boss.name,r.name,'one',r.id,r.cc||'#c8a0ff'));
+  mkBtn('← Back to Tower','','back',null,'#8c8aa0');
+  G.bossSelect.rects=rects;
+}
+function handleBossSelectClick(cx,cy){
+  const rs=G.bossSelect?.rects||[];
+  for(const r of rs){
+    if(cx>=r.x&&cx<=r.x+r.w&&cy>=r.y&&cy<=r.y+r.h){
+      if(r.action==='back'){MODE='hub';document.getElementById('hud').classList.remove('hidden');G.bossSelect=null;return;}
+      G.bossSelect=null;
+      if(r.action==='all')startBossRush();
+      else startBossRush([r.realmId]);
+      return;
+    }
+  }
+}
+
 function startLevel(realm,lvNum){
   G.curRealm=realm;G.curLvNum=lvNum;
   G.lv=genLevel(realm,lvNum,false);
@@ -3309,11 +3709,13 @@ function startBoss(){
 
 // ── BOSS RUSH (Trial of Champions) — fight every realm boss back-to-back, with a shop
 // between each. Unlocked once all realms are cleared. Uses the player's full upgraded build.
-function startBossRush(){
-  G.bossRush={seq:REALMS.map(r=>r.id),idx:0};
+function startBossRush(seq){
+  const order=(seq&&seq.length)?seq:REALMS.map(r=>r.id);
+  G.bossRush={seq:order,idx:0};
+  document.getElementById('hud').classList.remove('hidden'); // restore HUD after boss-select
   G.p.hp=G.p.maxHp;                 // enter the trial at full health
-  G.curRealm=REALMS[0];G.curLvNum=0;
-  showMsg('⚔ Trial of Champions — survive every boss!');
+  G.curRealm=REALMS.find(r=>r.id===order[0])||REALMS[0];G.curLvNum=0;
+  showMsg(order.length>1?'⚔ Trial of Champions — survive every boss!':'⚔ Trial — '+G.curRealm.boss.name+'!');
   startBoss();
 }
 function bossRushAdvance(){
@@ -3382,7 +3784,6 @@ function bossComplete(bx,by){
   const r=G.curRealm,prog=G.progress.rp[r.id];
   if(!G.bossRush){
     prog.bossDown=true;
-    if(!G.progress.runestones.includes(r.id))G.progress.runestones.push(r.id);
     checkUnlocks();
   }
   showMsg(`${r.boss.name} defeated! Collect the spoils!`);
@@ -3426,10 +3827,10 @@ function checkUnlocks(){
   REALMS.forEach((r,i)=>{
     if(G.progress.unlocked.includes(r.id))return;
     if(i===0){
-      // Forsaken Province: the 5 hub crystals are the opening tutorial gate
+      // Boneyard: the 5 hub crystals are the opening tutorial gate
       if(G.progress.hubCrystals.filter(Boolean).length>=r.unlockCost){
         G.progress.unlocked.push(r.id);
-        showMsg(`Forsaken Province is now accessible!`);
+        showMsg(`Boneyard is now accessible!`);
       }
     } else {
       // Every later realm unlocks by clearing the previous realm's boss (clear-to-advance,
@@ -3584,13 +3985,13 @@ function refreshShopUI(){
     html+=`
     <div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-family:Cinzel,serif;font-size:10px;color:#777;width:46px;flex-shrink:0">${g.label}${g.note?`<br><span style="font-size:7.5px;color:#557;letter-spacing:0">${g.note}</span>`:''}</span>
+        <span style="font-family:Cinzel,serif;font-size:11px;color:#cfc6e0;width:46px;flex-shrink:0">${g.label}${g.note?`<br><span style="font-size:9px;color:#a7a0c4;letter-spacing:0">${g.note}</span>`:''}</span>
         <div style="flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${g.col};border-radius:2px;transition:width .35s"></div>
         </div>
-        <span style="font-family:Cinzel,serif;font-size:10px;color:#bbb;min-width:44px;text-align:right;flex-shrink:0">${g.val()}</span>
+        <span style="font-family:Cinzel,serif;font-size:11px;color:#e4dcf2;min-width:44px;text-align:right;flex-shrink:0">${g.val()}</span>
       </div>
-      ${g.desc?`<div style="font-size:7.5px;color:#667;margin-bottom:4px;line-height:1.35">${g.desc}</div>`:''}
+      ${g.desc?`<div style="font-size:9px;color:#a99ec4;margin-bottom:4px;line-height:1.4;text-align:center">${g.desc}</div>`:''}
       <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap">${btns}</div>
     </div>`;
   });
@@ -3684,12 +4085,16 @@ function famWispZap(pl,dt){
   SFX.atPos(ox,oy);
 }
 function famMagpiePull(pl,dt){
+  // Only vacuum loose pickups — never chests (a locked chest with no key would otherwise
+  // get dragged onto the player and stick there).
+  const PULL=FAM_MAG_TYPES;
   (G.lv.items||[]).forEach(it=>{
-    if(it.collected)return;
+    if(it.collected||!PULL.has(it.type))return;
     const dx=pl.x-it.x,dy=pl.y-it.y,dl=Math.hypot(dx,dy);
     if(dl<FAM_MAG_R&&dl>2){const step=Math.min(dl,TL*5.5*dt);it.x+=dx/dl*step;it.y+=dy/dl*step;}
   });
 }
+const FAM_MAG_TYPES=new Set(['gold','crystal','food','powerup','key']);
 function updateFamiliars(dt){
   if(!G.lv)return;
   // Local player: keep orbit fresh + fire the wisp (spawns a local proj like a normal shot,
@@ -3735,11 +4140,25 @@ function updatePlayer(dt){
     if(p.kbTimer<=0){p.kbVx=0;p.kbVy=0;}
   }
   let dx=G.inp.dx,dy=G.inp.dy;
+  // FROZEN — a freeze status (Frostlands' Rimewarden) locks movement AND attacks briefly
+  const frozen=(p.frozen||0)>0;
+  if(frozen){p.frozen-=dt;dx=0;dy=0;p.slipVx=0;p.slipVy=0;}
+  // Host ticks down remote players' freeze too (drives the synced fz countdown)
+  if(!MP.enabled||MP.isHost){G.players.forEach(pl=>{if(pl&&pl!==p&&(pl.frozen||0)>0)pl.frozen-=dt;});}
   const len=Math.hypot(dx,dy);
   // Only update facing from movement when not aiming — preserves mouse/joystick aim direction
   if(len>0){dx/=len;dy/=len;if(len>.1&&!G.inp.atk){p.facing.x=dx;p.facing.y=dy;}}
   const spd=p.spd*(G.inp.atk?0.5:1)*(MUT('haste')?1.4:1); // HASTE mutator — faster movement
-  const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
+  // Realm GIMMICK — slippery floors: velocity eases instead of snapping, so you slide.
+  // Reusable per-realm trait; ice slides more inside the boss arena. Other realms: instant.
+  const resp=moveResponse();
+  let mvx,mvy;
+  if(resp>0){
+    p.slipVx=lerp(p.slipVx||0,dx*spd,resp*dt);
+    p.slipVy=lerp(p.slipVy||0,dy*spd,resp*dt);
+    mvx=p.slipVx;mvy=p.slipVy;
+  } else {p.slipVx=0;p.slipVy=0;mvx=dx*spd;mvy=dy*spd;}
+  const nx=p.x+mvx*dt,ny=p.y+mvy*dt;
   if(!solid(G.lv.map,nx,p.y))p.x=nx;
   if(!solid(G.lv.map,p.x,ny))p.y=ny;
   p.x=clamp(p.x,TL,(MW-1)*TL);p.y=clamp(p.y,TL,(MH-1)*TL);
@@ -3816,7 +4235,7 @@ function updatePlayer(dt){
   const isMoving=(Math.abs(G.inp.dx)>.1||Math.abs(G.inp.dy)>.1);
   if(isMoving)p.walkPhase=(p.walkPhase||0)+dt*(p.spd*.038);
   const isMeleeClass=meleeProfile(p).dmgMul>=1;
-  if(isMeleeClass&&isMoving&&p.atkTimer<=0&&!p.attacking&&!G.inp.atk){
+  if(isMeleeClass&&isMoving&&p.atkTimer<=0&&!p.attacking&&!G.inp.atk&&!frozen){
     const moveAngle=Math.atan2(G.inp.dy,G.inp.dx);
     const autoTarget=findNearest(G.lv.enemies,p,TL*2.0);
     if(autoTarget){
@@ -3847,7 +4266,7 @@ function updatePlayer(dt){
   // Smart attack: melee if enemy in range, otherwise projectile.
   // Range is class-aware — wizards have a much smaller melee window, so they
   // default to ranged unless an enemy is right on top of them.
-  if(G.inp.atk&&p.atkTimer<=0&&!p.attacking){
+  if(G.inp.atk&&p.atkTimer<=0&&!p.attacking&&!frozen){
     p.attacking=true;p.atkProg=0;p.atkTimer=effAtkCd(p,ATKCD);
     const meleeR=meleeProfile(p).range;
     const near=findNearest(G.lv.enemies,p,meleeR);
@@ -4047,11 +4466,6 @@ function updatePlayer(dt){
         addFT(names[item.id]||'POWER UP!',item.x,item.y-TL*.5,'#44ffcc');
         spawnP(item.x,item.y,'#44ffcc',14);
       } else {return true;}
-    }
-    else if(item.type==='rune'){
-      if(!G.progress.runestones.includes(item.realm)){
-        showMsg('Runestone discovered!');addFT('RUNESTONE!',item.x,item.y,'#ff88ff');
-      }
     }
     return false;
   });
@@ -4858,7 +5272,7 @@ function updateProjs(dt){
 
 // Grunts spawn exclusively from spawners — heavy from healthy, light from damaged
 function mkGrunt(realm,isHeavy,x,y,spawnerRef=null){
-  const sc=1+(G.curLvNum||0)*.3;
+  const sc=(1+(G.curLvNum||0)*.3)*globalScale();
   const id=realm?.id||'forsaken';
 
   // Realm-specific grunt identity
@@ -4874,6 +5288,10 @@ function mkGrunt(realm,isHeavy,x,y,spawnerRef=null){
     castle:{
       heavy:{name:'Dark Knight', col:'#1e2848',out:'#4466bb'},
       light:{name:'Castle Shade',col:'#443366',out:'#7755aa'},
+    },
+    ice:{
+      heavy:{name:'Frost Golem', col:'#5a7a96',out:'#9cc8e8'},
+      light:{name:'Snow Sprite', col:'#bcdcf0',out:'#e8f4ff'},
     },
   };
   const def=(GRUNT_DEFS[id]||GRUNT_DEFS.forsaken)[isHeavy?'heavy':'light'];
@@ -4956,7 +5374,7 @@ function hitSpawner(sp){
 function mkBossMinion(realm,x,y){
   const safe=realm.ed.filter(d=>d.type!=='suicide_bomber');
   const d=(safe.length?safe:realm.ed)[rand(0,(safe.length||realm.ed.length)-1)];
-  const sc=1+(G.curLvNum||0)*.3;
+  const sc=(1+(G.curLvNum||0)*.3)*globalScale();
   return{...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
     x,y,vx:0,vy:0,state:'chase',atkTimer:0,atkTimer2:2,hitFlash:0,alive:true,
     eid:Math.random().toString(36).slice(2,8)};
@@ -4965,7 +5383,7 @@ function mkBossMinion(realm,x,y){
 function mkEnemy(realm,x,y){
   const defs=realm.ed;
   const d=defs[rand(0,defs.length-1)];
-  const sc=1+(G.curLvNum||0)*.3;
+  const sc=(1+(G.curLvNum||0)*.3)*globalScale();
   const e={...d,hp:Math.floor(d.hp*sc),maxHp:Math.floor(d.hp*sc),atk:Math.floor(d.atk*sc),
     x,y,vx:0,vy:0,state:'idle',atkTimer:0,atkTimer2:2,hitFlash:0,alive:true,
     eid:Math.random().toString(36).slice(2,8)}; // unique ID for MP sync
@@ -5238,7 +5656,7 @@ function mpConnect(roomCode){
     MP.ably=ably;
     ably.connection.on('connected',()=>{
       MP.status='connected';
-      const ch=ably.channels.get('gauntless-'+MP.roomCode);
+      const ch=ably.channels.get('plunderpit-'+MP.roomCode);
       MP.channel=ch;
       ch.subscribe('msg',(msg)=>{
         const d=msg.data;
@@ -5254,7 +5672,7 @@ function mpConnect(roomCode){
       MP._ping=setInterval(()=>{if(MP.enabled||!MP.isHost)mpSend({type:'ping',playerId:MP.playerId});},5000);
       if(!MP.isHost){
         const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId,
-      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass});
         sendJoin();
         MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},3000);
         MP._joinTimeout=setTimeout(()=>{
@@ -5565,7 +5983,7 @@ function mpHandleMessage(d){
           const sx=HPSX*TL,sy=HPSY*TL;
           G.players[ri.playerIdx]=createRemotePlayer(d.playerId,ri.playerIdx,sx,sy);
         }
-        if(d.charPrimary){G.players[ri.playerIdx].charPrimary=d.charPrimary;G.players[ri.playerIdx].charAccent=d.charAccent;}
+        if(d.charPrimary){G.players[ri.playerIdx].charPrimary=d.charPrimary;G.players[ri.playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[ri.playerIdx].charClass=d.charClass;}
         mpSend({type:'welcome',playerId:d.playerId,playerIdx:ri.playerIdx,
           totalPlayers:G.players.length,hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
         mpUpdateLobby();return;
@@ -5579,7 +5997,7 @@ function mpHandleMessage(d){
       MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx,lastPing:Date.now()};
       // Always create fresh slot — handles null from previous eviction
       G.players[playerIdx]=createRemotePlayer(d.playerId,playerIdx,sx,sy);
-      if(d.charPrimary){G.players[playerIdx].charPrimary=d.charPrimary;G.players[playerIdx].charAccent=d.charAccent;}
+      if(d.charPrimary){G.players[playerIdx].charPrimary=d.charPrimary;G.players[playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[playerIdx].charClass=d.charClass;}
       MP.enabled=true;
       mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length,
         hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
@@ -5593,7 +6011,7 @@ function mpHandleMessage(d){
       if(rp&&d.px){
         rp.x=lerp(rp.x,d.px,.6);rp.y=lerp(rp.y,d.py,.6);
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
-        if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;}
+        if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;if(d.charClass)rp.charClass=d.charClass;}
         if(d.playerMode)rp.playerMode=d.playerMode;
         if(typeof d.atk==='number')rp.atk=d.atk;
         if(typeof d.maxHp==='number')rp.maxHp=d.maxHp;
@@ -5795,6 +6213,7 @@ function mpBroadcastState(){
       turbo:p.turbo||0,item:p.item,itemTimer:p.itemTimer||0,gold:p.gold||0,crystals:p.crystals||0,familiar:p.familiar||null,keys:p.keys||0,
       level:p.level||1,xp:p.xp||0,xpNext:p.xpNext||100,kills:p.kills||0,lives:p.lives===undefined?3:p.lives,
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
+      fz:Math.round((p.frozen||0)*100)/100,
       playerMode:p===G.p?MODE:p.playerMode,
     }:null),
     projs:G.projs.slice(0,60).map(pr=>({
@@ -5838,8 +6257,10 @@ function mpBroadcastState(){
       atk:G.lv.boss.atk||10,
       facing:G.lv.boss.facing||{x:1,y:0},
       bu:Math.round((G.lv.boss._burrow||0)*100)/100,
+      bz:Math.round((G.lv.boss._blizzard||0)*100)/100,
     }:null;
     if(G.lv?.wyrmMaze){const wm=G.lv.wyrmMaze;payload.wmaze={t:wm.tiles,e:wm.entrance,ep:wm.epoch,pr:Math.round((wm.prog||0)*100)};}
+    payload.iwall=G.lv?.iceWall?[G.lv.iceWall.axis==='x'?1:0,G.lv.iceWall.dir,Math.round(G.lv.iceWall.pos),G.lv.iceWall.blocks[0].i,G.lv.iceWall.blocks.map(bl=>bl.alive?Math.max(1,Math.round(bl.hp)):0)]:0;
   }
   mpSend(payload);
   G._mpDeaths=[];G._mpRespawns=[];G._mpMapUpd=null;
@@ -5854,7 +6275,7 @@ function mpApplyState(data){
     MP.enabled=false;
     showMsg('Reconnecting...');
     mpSend({type:'join',playerId:MP.playerId,
-      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent});
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass});
     return;
   }
   // Client follows host into level — request sync if missed
@@ -5941,6 +6362,20 @@ function mpApplyState(data){
       if(data.bp){G.lv.bossPortal={x:data.bp[0],y:data.bp[1]};G.lv.bossPortalTimer=data.bp[2];}
       else if(G.lv.bossPortal){G.lv.bossPortal=null;G.lv.bossPortalTimer=0;}
     }
+    // Sweeping ice wall — reconstruct from host so the client sees it advance + blocks shatter
+    if('iwall' in data){
+      if(data.iwall){
+        const [a,dir,pos,i0,hps]=data.iwall;
+        if(!G.lv.iceWall){
+          G.lv.iceWall={axis:a?'x':'y',dir,pos,speed:0,life:99,atk:0,
+            blocks:hps.map((hp,idx)=>({i:i0+idx,alive:hp>0,hp:hp||0,maxHp:36,hitFlash:0}))};
+        } else {
+          const w=G.lv.iceWall;w.axis=a?'x':'y';w.dir=dir;w.pos=pos;
+          hps.forEach((hp,idx)=>{const bl=w.blocks[idx];if(!bl)return;const was=bl.alive;bl.hp=hp||0;bl.alive=hp>0;
+            if(was&&!bl.alive){bl.hitFlash=.12;iceShatter(w,bl);}});
+        }
+      } else if(G.lv.iceWall){G.lv.iceWall=null;}
+    }
   }
   // Boss state sync — host authoritative, client renders
   if(!MP.isHost&&G.lv&&'boss' in data){
@@ -5960,6 +6395,7 @@ function mpApplyState(data){
           phase1color:data.boss.phase1color,phase2color:data.boss.phase2color,
           atk:data.boss.atk,
           _burrow:data.boss.bu||0,_untargetable:(data.boss.bu||0)>0.5,
+          _blizzard:data.boss.bz||0,
         });
         // Run death FX locally when boss transitions to dying
         if(wasAlive&&data.boss.dying&&!G.lv.boss._deathFxFired){
@@ -6148,6 +6584,7 @@ function mpApplyState(data){
         if(typeof snap.xpNext==='number')G.p.xpNext=snap.xpNext;
         if(typeof snap.kills==='number')G.p.kills=snap.kills;
         if(typeof snap.lives==='number')G.p.lives=snap.lives;
+        if(typeof snap.fz==='number')G.p.frozen=snap.fz; // host can freeze the client; it locks itself
         // Local level-up FX if host's authoritative level just incremented
         if((G.p.level||1)>prevLvl){
           SFX.levelUp();addFT('LEVEL UP!',G.p.x,G.p.y-TL*1.6,'#f5c542');
@@ -6165,6 +6602,7 @@ function mpApplyState(data){
     if(snap.charPrimary)rp.charPrimary=snap.charPrimary;
     if(snap.charAccent)rp.charAccent=snap.charAccent;
     rp.turbo=snap.turbo;rp.item=snap.item;
+    rp.frozen=snap.fz||0; // show the ice shell on frozen teammates
     if('familiar' in snap)rp.familiar=snap.familiar;
     if(snap.attacking&&!rp.attacking){SFX.atPos(rp.x,rp.y);SFX.swing();}
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
@@ -6288,6 +6726,11 @@ function updateAmbientParticles(dt){
         vx:(Math.random()-.5)*14,vy:-(20+Math.random()*25),
         life:2+Math.random()*2,ml:4,sz:1+Math.random()*1.8,
         col:Math.random()<.6?'#ff5511':'#ffaa33',type:'ember'});
+    } else if(r==='ice'){
+      G.ambientParts.push({x:sx,y:cam.y-TL,
+        vx:(Math.random()-.5)*8,vy:14+Math.random()*22,
+        life:5+Math.random()*3,ml:8,sz:1+Math.random()*1.6,
+        col:Math.random()<.5?'#dff0ff':'#bcdcf0',type:'snow'});
     }
   }
   // Update
@@ -6296,6 +6739,7 @@ function updateAmbientParticles(dt){
     if(p.type==='spore')p.vx+=Math.sin(p.life*3.1)*.8;
     if(p.type==='ember'){p.vx+=(Math.random()-.5)*8*dt;p.vy+=2*dt;}
     if(p.type==='smoke'){p.vx+=(Math.random()-.5)*3*dt;p.sz+=dt*.8;}
+    if(p.type==='snow')p.vx+=Math.sin(p.life*2.4)*1.2; // gentle drift
     return p.life>0;
   });
 }
@@ -6303,7 +6747,7 @@ function updateAmbientParticles(dt){
 function drawAmbientParticles(){
   if(!G.ambientParts?.length)return;
   G.ambientParts.forEach(p=>{
-    const a=Math.min(1,p.life/p.ml)*({spore:.35,dust:.22,ember:.55,smoke:.18}[p.type]||.3);
+    const a=Math.min(1,p.life/p.ml)*({spore:.35,dust:.22,ember:.55,smoke:.18,snow:.5}[p.type]||.3);
     if(a<=0)return;
     ctx.globalAlpha=a;
     ctx.fillStyle=p.col;
@@ -6916,6 +7360,7 @@ function startBossDeath(b,bx,by){
     G.lv.lichTether=null;
     G.lv.warnings=[];
     G.lv.hazards=[];
+    G.lv.iceWall=null; // stop any sweeping ice wall
     // Collapse the Wyrm's labyrinth if it died mid-channel, restoring the arena tiles
     if(G.lv.wyrmMaze){
       const mt=b.bossState&&b.bossState.mazeTiles;
@@ -7421,6 +7866,13 @@ const MUSIC=(()=>{
       snare:[1,0,0,0,0,0,1,0,1,0,1,0,0,0,1,0], hat:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
       leadInst:'sawtooth', leadGain:0.075, leadCut:2400, leadDur:0.4 },
 
+    ice:{ bpm:96, root:58.27, scale:SC.min, padInst:'triangle', padCut:680, padBars:2, padGain:0.06,
+      chords:[[0,2,4],[ -3,-1,2]],
+      bass:[0,_,_,_,_,_,3,_, _,_,_,_,5,_,_,_],
+      melody:[7,_,_,_,4,_,_,_, _,_,7,_,_,_,9,_, 11,_,_,7,_,_,4,_, _,_,2,_,_,_,_,_],
+      kick:[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], hat:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+      bassInst:'triangle', bassGain:0.1, bassCut:680, leadInst:'triangle', leadGain:0.07, leadCut:2400, leadDur:0.5, sweep:0.3 },
+
     // ── BOSS THEMES — one per realm ──
     boss_forsaken:{ bpm:150, root:73.42, scale:SC.phr, padInst:'sawtooth', padCut:900, padBars:1, padGain:0.05, drive:true,
       chords:[[0,1,4],[ -2,-1,2]],
@@ -7444,17 +7896,26 @@ const MUSIC=(()=>{
       kick:[1,0,0,1,1,0,0,0,1,0,0,1,1,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,1,0],
       hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
       bassInst:'sawtooth', bassGain:0.12, bassCut:1300, leadInst:'sawtooth', leadGain:0.085, leadCut:2800, leadDur:0.26, sweep:0.45 },
+
+    boss_ice:{ bpm:148, root:82.41, scale:SC.min, padInst:'sawtooth', padCut:880, padBars:1, padGain:0.05, drive:true,
+      chords:[[0,2,4],[ -1,1,3]],
+      bass:[0,0,_,0,3,_,0,_, 5,_,3,_,0,_,_,_],
+      melody:[7,_,_,4,_,_,7,_, 9,_,7,_,_,_,_,_, 11,_,_,7,_,4,_,_, 7,_,4,0,_,_,_,_],
+      kick:[1,0,0,1,1,0,0,0,1,0,0,1,1,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+      hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
+      bassInst:'sawtooth', bassGain:0.12, bassCut:1000, leadInst:'square', leadGain:0.08, leadCut:2600, leadDur:0.24, sweep:0.4 },
   };
 
   // ── SEQUENCER ──────────────────────────────
   // Adaptive tempo: boss themes accelerate as the fight escalates through HP phases —
   // tension builds toward the kill (classic dynamic-music technique).
   function effBpm(){
-    let b=theme.bpm;
-    if(themeName&&themeName.indexOf('boss')===0&&typeof G!=='undefined'&&G.lv&&G.lv.boss){
-      const ph=G.lv.boss.phase||1; b*=(1+(ph-1)*0.05); // up to +15% by the final phase
-    }
-    return b;
+    return theme.bpm; // constant — boss escalation now comes from added layers, not tempo
+  }
+  // Current boss phase for layering (0 = not a boss theme, else 1..4)
+  function bossPhase(){
+    if(themeName&&themeName.indexOf('boss')===0&&typeof G!=='undefined'&&G.lv&&G.lv.boss)return G.lv.boss.phase||1;
+    return 0;
   }
   // One-shot musical flourish — a reward cue (tension→release) layered over whatever's playing.
   function stinger(kind){
@@ -7487,10 +7948,28 @@ const MUSIC=(()=>{
       tone(hz(root,sc,m),t,(th.leadDur||0.4),{type:th.leadInst||'triangle',gain:th.leadGain||0.09,cut:th.leadCut||2400,sweep:th.sweep});}
     // Percussion
     const ps=s%16;
+    const ph=bossPhase(); // 0 = not a boss theme
     if(th.kick&&th.kick[ps])kick(t,th.drive?0.55:0.45);
     if(th.snare&&th.snare[ps])snare(t,0.26);
-    if(th.hat&&th.hat[ps])hat(t,0.1);
-    if(th.tom&&th.tom[ps])tom(t,110,0.38);
+    // Hats/toms: non-boss play as authored; on bosses they layer IN as phases escalate
+    if(th.hat&&th.hat[ps]&&(ph===0||ph>=2))hat(t,0.1);
+    if(th.tom&&th.tom[ps]&&(ph===0||ph>=3))tom(t,110,0.38);
+
+    // ── Boss intensity layers — ADDED with each phase (the fight gets denser, not faster) ──
+    if(ph>=2){
+      // Phase 2: off-beat hi-hat shimmer adds forward momentum
+      if(s%2===1)hat(t,0.05);
+    }
+    if(ph>=3){
+      // Phase 3: a low tension drone under the bar + a syncopated kick pulse
+      if(s===0)tone(hz(root,sc,-7),t,barDur*0.95,{type:'sawtooth',gain:0.05,cut:520});
+      if(ps%4===2)kick(t,0.3);
+    }
+    if(ph>=4){
+      // Phase 4: octave-up counter-melody echo + ghost snares — full frantic intensity
+      if(th.melody){const m4=th.melody[gstep%th.melody.length];if(m4!=null)tone(hz(root,sc,m4+12),t,0.2,{type:'square',gain:0.05,cut:3200});}
+      if(ps%4===0)snare(t,0.11);
+    }
   }
   function loop(){
     if(!theme)return;
@@ -7506,7 +7985,7 @@ const MUSIC=(()=>{
     themeName=name; theme=T[name]||T.menu; gstep=0; bar=0;
     if(started){swapThemeGain();nextTime=Math.max(nextTime,C().currentTime+0.05);}
   }
-  function setEnabled(on){ enabled=on; if(bus)bus.gain.value=on?vol:0; try{localStorage.setItem('gauntless_music',on?'1':'0');}catch(e){} }
+  function setEnabled(on){ enabled=on; if(bus)bus.gain.value=on?vol:0; try{localStorage.setItem('plunderpit_music',on?'1':'0');}catch(e){} }
   function isEnabled(){return enabled;}
   function setVol(v){vol=v;if(bus&&enabled)bus.gain.value=v;}
   return{start,setTheme,setEnabled,isEnabled,setVol,stinger};
@@ -7697,10 +8176,21 @@ function drawBossPortal(bp){
   ctx.strokeStyle=`rgba(212,168,83,${f})`;ctx.lineWidth=2.5;
   ctx.beginPath();ctx.ellipse(x,y,TL*.52,TL*.38,0,0,Math.PI*2);ctx.stroke();
   ctx.shadowBlur=0;
+  // Loading ring — fills while a player stands on the portal (matches the level-exit ring)
+  const pt=(G.lv.bossPortalTimer||0);
+  if(pt>0){
+    const prog=Math.min(1,pt/3.5), pulse=.75+.25*Math.sin(G.t*10), rr=TL*.66;
+    ctx.strokeStyle='rgba(212,168,83,.2)';ctx.lineWidth=3.5;
+    ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle=`rgba(245,197,66,${pulse})`;ctx.lineWidth=3.5;
+    ctx.shadowColor='#f5c542';ctx.shadowBlur=14;
+    ctx.beginPath();ctx.arc(x,y,rr,-Math.PI/2,-Math.PI/2+Math.PI*2*prog);ctx.stroke();
+    ctx.shadowBlur=0;
+  }
   // Label
   ctx.fillStyle=`rgba(212,168,83,${f*.9})`;ctx.font='bold 11px Cinzel,serif';
   ctx.textAlign='center';ctx.textBaseline='top';ctx.shadowBlur=0;
-  ctx.fillText('Return to Tower',x,y+TL*.44);
+  ctx.fillText('Return to Tower',x,y+TL*.74);
 }
 
 function updateDyingEnemies(dt){
@@ -7766,9 +8256,8 @@ function drawMinimap(){
   const cell=size/MW;
   const pad=10;
   const mx=cv.width-size-pad;
-  // Shift down past the realm label, and past any MP team cards stacked top-right
-  const teammates=MP.enabled?G.players.filter(rp=>rp&&rp!==G.p&&(rp.playerMode==='level'||rp.playerMode==='boss')).length:0;
-  const my=pad+46+Math.min(3,teammates)*46;
+  // Shift down past the realm label/level row in the top-right
+  const my=pad+46;
   ctx.save();
   ctx.globalAlpha=.72;
   ctx.fillStyle='#0a0812';
@@ -7878,7 +8367,20 @@ function renderLevel(){
   G.players.forEach(rp=>{if(rp&&rp!==G.p&&(rp.playerMode==='level'||rp.playerMode==='boss'))drawRemotePlayer(rp);});
   drawPlayer2();drawParts();
   eachPlayer(pl=>drawFamiliar(pl));
+  // FROZEN — jagged ice shell over any frozen player
+  eachPlayer(pl=>{
+    if((pl.frozen||0)<=0)return;
+    ctx.save();ctx.translate(pl.x,pl.y);
+    ctx.globalAlpha=.8;ctx.fillStyle='rgba(170,220,255,.35)';
+    ctx.strokeStyle='rgba(225,245,255,.85)';ctx.lineWidth=2;
+    ctx.shadowColor='#aee0ff';ctx.shadowBlur=12;
+    ctx.beginPath();
+    for(let i=0;i<=10;i++){const ang=i/10*Math.PI*2;const rr=TL*.72*(i%2?1:.72);ctx.lineTo(Math.cos(ang)*rr,Math.sin(ang)*rr);}
+    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.shadowBlur=0;ctx.globalAlpha=1;ctx.restore();
+  });
   if(MODE==='boss'&&G.lv.boss)drawBoss();
+  if(G.lv?.iceWall)drawIceWall();
   // Soul tether beam (Lich)
   if(G.lv?.lichTether){
     const t=G.lv.lichTether,pulse=Math.sin(G.t*10)*.4+.6;
@@ -7975,6 +8477,17 @@ function renderLevel(){
     dg.addColorStop(0.7,'rgba(0,0,0,0.62)');
     dg.addColorStop(1,'rgba(0,0,0,0.9)');
     ctx.fillStyle=dg;ctx.fillRect(0,0,cv.width,cv.height);
+  }
+  // BLIZZARD — the Rimewarden's phase-4 whiteout: vision fades into driving snow
+  if((G.lv?.boss?._blizzard||0)>0){
+    const bz=G.lv.boss._blizzard, a=Math.min(1,bz/1.0)*0.55;
+    ctx.fillStyle=`rgba(225,240,255,${a})`;ctx.fillRect(0,0,cv.width,cv.height);
+    // streaking snow
+    ctx.strokeStyle=`rgba(255,255,255,${a*.9})`;ctx.lineWidth=2;
+    for(let i=0;i<40;i++){
+      const x=(i*131+G.t*420)%(cv.width+80)-40, y=(i*97+G.t*260)%(cv.height+80)-40;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-14,y+8);ctx.stroke();
+    }
   }
   if(G.hurtFlash>0)G.hurtFlash=Math.max(0,G.hurtFlash-G.dt_last*.018||0.016*.018*60);
 }
@@ -8368,13 +8881,70 @@ function drawRealmVoid(th){
       ctx.strokeStyle='#2a2840';ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
     });
+
+  } else if(id==='ice'){
+    // ── FROSTLANDS — frozen cavern: cold gradient, distant ice spires, aurora, drifting snow ──
+    const bg=ctx.createLinearGradient(0,-TL*8,0,H+TL*8);
+    bg.addColorStop(0,'#0a1420');bg.addColorStop(.5,'#0e1a26');bg.addColorStop(1,'#0a141e');
+    ctx.fillStyle=bg;ctx.fillRect(-TL*8,-TL*8,W+TL*16,H+TL*16);
+    // Aurora shimmer bands up high
+    for(let b=0;b<3;b++){
+      const ay=-TL*5.5+b*TL*1.2, aw=Math.sin(G.t*.4+b)*.5+.5;
+      ctx.fillStyle=`rgba(${b===1?'120,255,200':'130,200,255'},${.035+aw*.045})`;
+      ctx.fillRect(-TL*8,ay+pay,W+TL*16,TL*1.3);
+    }
+    // Distant jagged ice spires (parallax)
+    [W*.1,W*.26,W*.44,W*.62,W*.8,W*.94,-TL*2,W+TL*1.5].forEach((bx,i)=>{
+      const x=bx+pax, h=TL*(2.6+((i*5+2)%4)), w=TL*(.7+((i*3)%3)*.3);
+      ctx.fillStyle='#15212e';
+      ctx.beginPath();ctx.moveTo(x-w*.5,0);ctx.lineTo(x,-h);ctx.lineTo(x+w*.5,0);ctx.closePath();ctx.fill();
+      ctx.fillStyle='rgba(150,200,235,.08)';
+      ctx.beginPath();ctx.moveTo(x,-h);ctx.lineTo(x+w*.22,-h*.4);ctx.lineTo(x+w*.5,0);ctx.lineTo(x,0);ctx.closePath();ctx.fill();
+    });
+    // Drifting snow flecks beyond the arena
+    for(let i=0;i<60;i++){
+      const sx=((i*97+G.t*8)%(W+TL*16))-TL*8+pax*.4;
+      const sy=((i*53+G.t*22)%(H+TL*16))-TL*8;
+      ctx.fillStyle=`rgba(220,240,255,${.1+(i%3)*.05})`;
+      ctx.fillRect(sx,sy,2,2);
+    }
+    // Raised outer walls — icy stone with frost lips + hanging icicles
+    for(let i=0;i<MW;i++){
+      const x=i*TL;
+      ctx.fillStyle=th.wt;ctx.fillRect(x,-DEPTH,TL,DEPTH);
+      ctx.fillStyle='#0e1a26';ctx.fillRect(x,0,TL,FACE);
+      ctx.fillStyle='rgba(180,220,245,.12)';ctx.fillRect(x,-DEPTH,TL,3); // frost rime
+      if((i*7+3)%4===0){ // icicles
+        const il=TL*(.3+((i*5)%3)*.12);
+        ctx.fillStyle='rgba(190,225,245,.5)';
+        ctx.beginPath();ctx.moveTo(x+TL*.4,0);ctx.lineTo(x+TL*.5,il);ctx.lineTo(x+TL*.6,0);ctx.closePath();ctx.fill();
+      }
+      ctx.fillStyle='#0a141e';ctx.fillRect(x,H,TL,TL*.4);
+    }
+    for(let i=0;i<MH;i++){
+      const y=i*TL;
+      ctx.fillStyle='#0e1a26';ctx.fillRect(-FACE*.7,y,FACE*.7,TL);
+      ctx.fillStyle='#0e1a26';ctx.fillRect(W,y,FACE*.7,TL);
+      if((i*7+1)%5===0){ctx.fillStyle='rgba(150,210,240,.14)';
+        ctx.fillRect(-FACE*.5,y+TL*.3,FACE*.35,TL*.08);
+        ctx.fillRect(W+FACE*.15,y+TL*.6,FACE*.35,TL*.08);}
+    }
+    // Corner ice formations
+    [[0,-FACE],[W,-FACE],[0,H],[W,H]].forEach(([cx,cy],ci)=>{
+      const tw=TL*2, h=TL*(2.8+ci*.4);
+      ctx.fillStyle='#13202c';
+      ctx.beginPath();ctx.moveTo(cx-tw*.5,cy);ctx.lineTo(cx-tw*.2,cy-h);ctx.lineTo(cx+tw*.1,cy-h*.6);ctx.lineTo(cx+tw*.35,cy-h*.9);ctx.lineTo(cx+tw*.5,cy);ctx.closePath();ctx.fill();
+      const pulse=Math.sin(G.t*.5+ci*1.7)*.3+.7;
+      ctx.fillStyle=`rgba(150,210,245,${pulse*.12})`;
+      ctx.beginPath();ctx.moveTo(cx-tw*.2,cy-h);ctx.lineTo(cx,cy-h*.55);ctx.lineTo(cx+tw*.1,cy-h*.6);ctx.closePath();ctx.fill();
+    });
   }
 }
 
 function drawMap(th){
   const cl=Math.floor(G.cam.x/TL)-1,ct=Math.floor(G.cam.y/TL)-1;
   const cr=Math.ceil((G.cam.x+cv.width)/TL)+1,cb=Math.ceil((G.cam.y+cv.height)/TL)+1;
-  const flOverlay=G.curRealm?({forsaken:'rgba(30,0,50,0.05)',mountain:'rgba(10,18,35,0.06)',castle:'rgba(45,20,0,0.05)'}[G.curRealm.id]):null;
+  const flOverlay=G.curRealm?({forsaken:'rgba(30,0,50,0.05)',mountain:'rgba(10,18,35,0.06)',castle:'rgba(45,20,0,0.05)',ice:'rgba(40,70,100,0.07)'}[G.curRealm.id]):null;
   for(let ty=Math.max(0,ct);ty<Math.min(MH,cb);ty++){
     for(let tx=Math.max(0,cl);tx<Math.min(MW,cr);tx++){
       const t=G.lv.map[ty][tx],wx=tx*TL,wy=ty*TL;
@@ -8438,6 +9008,22 @@ function drawMap(th){
           if((tx*7+ty*5)%17===4){
             ctx.strokeStyle='rgba(0,0,0,.18)';ctx.lineWidth=1;
             ctx.beginPath();ctx.moveTo(wx+TL*.3,wy+TL*.2);ctx.lineTo(wx+TL*.55,wy+TL*.7);ctx.stroke();
+          }
+        } else if(id==='ice'){
+          // Frost rime along the top edge of each wall tile
+          ctx.fillStyle='rgba(180,220,245,.14)';ctx.fillRect(wx,wy+5,TL,2);
+          if((tx+ty)%3===0){ctx.fillStyle='rgba(200,230,250,.10)';ctx.fillRect(wx+4,wy+8,TL-8,TL*.4);}
+          // Hanging icicles from some tiles
+          if((tx*7+ty)%6===2){
+            const il=TL*(.3+((tx*3)%3)*.14);
+            ctx.fillStyle='rgba(190,225,245,.55)';
+            ctx.beginPath();ctx.moveTo(wx+TL*.45,wy+TL*.5);ctx.lineTo(wx+TL*.52,wy+TL*.5+il);ctx.lineTo(wx+TL*.59,wy+TL*.5);ctx.closePath();ctx.fill();
+            ctx.fillStyle='rgba(230,245,255,.5)';ctx.fillRect(wx+TL*.5,wy+TL*.5,2,il*.5);
+          }
+          // Frozen crystal vein cluster on some tiles
+          if((tx*5+ty*3)%13===4){
+            ctx.fillStyle='rgba(120,200,240,.4)';ctx.fillRect(wx+TL*.4,wy+TL*.2,2.5,TL*.55);
+            ctx.fillStyle='rgba(180,230,255,.25)';ctx.fillRect(wx+TL*.44,wy+TL*.24,1.5,TL*.45);
           }
         }
       } else if(t===TFLOOR){
@@ -8753,6 +9339,41 @@ function drawSpawners(th){
         for(let d=0;d<4;d++){const da=sp.ph+d*1.57;
           ctx.fillStyle='#1a1810';ctx.fillRect(Math.cos(da)*TL*.52-3,Math.sin(da)*TL*.36-2,7,5);
         }
+      }
+
+    // ── ICE — frozen shard cluster ──
+    } else if(id==='ice'){
+      const s=TL*.42;
+      ctx.shadowColor=th.ss;ctx.shadowBlur=dormant?4:(9+6*f);
+      // Frost glow pool
+      ctx.fillStyle=hexA(th.ss,dormant?.05:(.12*f));
+      ctx.beginPath();ctx.arc(0,0,TL*1.05,0,Math.PI*2);ctx.fill();
+      // Radiating ice shards — fewer as HP drops (they snap off)
+      const shardCount=hp>=3?7:hp>=2?5:3;
+      for(let i=0;i<shardCount;i++){
+        const a=i/shardCount*Math.PI*2+sp.ph*.2;
+        const len=s*(0.9+0.25*Math.sin(i*2.1));
+        ctx.save();ctx.rotate(a);
+        ctx.fillStyle=hp<=1?'rgba(150,180,205,.8)':hexA('#bcdcf0',dormant?.4:.7);
+        ctx.strokeStyle=hp<=1?'#ff5533':dormant?hexA(th.ss,.4):th.ss;ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(-3,0);ctx.lineTo(0,-len);ctx.lineTo(3,0);ctx.closePath();
+        ctx.fill();ctx.stroke();
+        ctx.restore();
+      }
+      // Central frozen core (glows when active, reddens as it cracks)
+      ctx.shadowColor=th.ss;ctx.shadowBlur=10*f;
+      ctx.fillStyle=hp<=1?`rgba(255,90,50,${.7*f})`:hexA(th.ss,dormant?.3:(.7*f));
+      ctx.beginPath();ctx.arc(0,0,TL*.16*(dormant?.8:f),0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      // Cracks at low HP
+      if(hp<=2){ctx.strokeStyle='rgba(255,90,40,.6)';ctx.lineWidth=1.4;
+        ctx.beginPath();ctx.moveTo(-s*.4,s*.2);ctx.lineTo(s*.1,-s*.3);ctx.stroke();}
+      if(hp<=1){ctx.strokeStyle='rgba(255,40,0,.8)';ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(-s*.45,-s*.2);ctx.lineTo(s*.3,s*.4);ctx.stroke();
+        // Shattered ice chips drifting off
+        for(let d=0;d<4;d++){const da=sp.ph+d*1.57+G.t*.3,dr=TL*.5+d*TL*.06,cxp=Math.cos(da)*dr,cyp=Math.sin(da)*dr;
+          ctx.fillStyle=hexA('#cfe4f2',.7);ctx.beginPath();
+          ctx.moveTo(cxp,cyp);ctx.lineTo(cxp+3,cyp+2);ctx.lineTo(cxp-1,cyp+4);ctx.closePath();ctx.fill();}
       }
 
     // ── CASTLE — iron cage crucible ──
@@ -9238,81 +9859,53 @@ function drawLichSprite(b,sz,col,fl){
 }
 
 function drawWyrmSprite(b,sz,col,fl){
-  const stone=fl?'#fff':'#4a3828';
-  const stoneMid=fl?'#fff':'#6a5038';
-  const crystal=fl?'#fff':'#ff8822';
-  const glow=fl?'#fff':'#ff6600';
-  const ringR=sz*.52,ringW=sz*.19;
-
-  const segs=12;
+  const stone=fl?'#fff':'#4a3828', stoneMid=fl?'#fff':'#6a5038', crystal=fl?'#fff':'#ff8822', glow=fl?'#fff':'#ff6600';
+  const segs=14, L=sz*1.85, amp=sz*.6, wig=Math.sin(G.t*2)*0.28;
+  // S-spine points (head at top, tail at bottom) with a gentle slither
+  const pts=[];
   for(let i=0;i<segs;i++){
-    const a1=(i/segs)*Math.PI*2-Math.PI*.5;
-    const a2=((i+.78)/segs)*Math.PI*2-Math.PI*.5;
-    ctx.strokeStyle=stone;ctx.lineWidth=ringW*2;ctx.lineCap='butt';
-    ctx.beginPath();ctx.arc(0,0,ringR,a1,a2);ctx.stroke();
-    ctx.strokeStyle=stoneMid;ctx.lineWidth=ringW*.5;
-    ctx.beginPath();ctx.arc(0,0,ringR-ringW*.35,a1,a2);ctx.stroke();
-    const rx=Math.cos(a1)*ringR,ry=Math.sin(a1)*ringR;
-    ctx.fillStyle=crystal;ctx.shadowColor=glow;ctx.shadowBlur=5;
-    ctx.beginPath();ctx.arc(rx,ry,sz*.04,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;
+    const t=i/(segs-1);
+    pts.push({x:amp*Math.sin(t*Math.PI*2+wig), y:(t-0.5)*L, t});
   }
-
-  for(let i=0;i<segs;i+=2){
-    if(i===0)continue;
-    const midA=((i+.39)/segs)*Math.PI*2-Math.PI*.5;
-    const sx=Math.cos(midA),sy=Math.sin(midA);
-    const base={x:sx*(ringR+ringW),y:sy*(ringR+ringW)};
-    const blen=sz*(.22+.06*(i%3));
-    const tip={x:sx*(ringR+ringW+blen),y:sy*(ringR+ringW+blen)};
-    ctx.shadowColor=glow;ctx.shadowBlur=10;
-    ctx.strokeStyle=crystal;ctx.lineWidth=sz*.07;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(base.x,base.y);ctx.lineTo(tip.x,tip.y);ctx.stroke();
-    if(i%4===2){
-      const sa=midA+.5;
-      ctx.lineWidth=sz*.04;
-      ctx.beginPath();ctx.moveTo(base.x,base.y);
-      ctx.lineTo(Math.cos(sa)*(ringR+ringW+sz*.14),Math.sin(sa)*(ringR+ringW+sz*.14));ctx.stroke();
+  // Body — drawn tail→head so the head overlaps on top; tapers toward the tail
+  for(let i=segs-1;i>=1;i--){
+    const pt=pts[i], r=sz*(.33-.17*pt.t);
+    ctx.fillStyle=stone;ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=stoneMid;ctx.lineWidth=Math.max(1,sz*.04);ctx.beginPath();ctx.arc(pt.x,pt.y,r*.66,0,Math.PI*2);ctx.stroke();
+    // crystal spike, alternating sides, perpendicular to the spine
+    if(i%2===1){
+      const prev=pts[i-1], dx=pt.x-prev.x, dy=pt.y-prev.y, dl=Math.hypot(dx,dy)||1;
+      const nx=-dy/dl, ny=dx/dl, side=(i%4===1?1:-1), blen=sz*.18;
+      ctx.shadowColor=glow;ctx.shadowBlur=8;ctx.strokeStyle=crystal;ctx.lineWidth=sz*.06;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(pt.x+nx*side*r,pt.y+ny*side*r);
+      ctx.lineTo(pt.x+nx*side*(r+blen),pt.y+ny*side*(r+blen));ctx.stroke();ctx.shadowBlur=0;
     }
-    ctx.shadowBlur=0;
   }
-
-  const headX=0,headY=-ringR;
+  // Head
+  const h=pts[0], headR=sz*.32;
   ctx.fillStyle=stone;ctx.shadowColor=glow;ctx.shadowBlur=14;
-  ctx.beginPath();ctx.arc(headX,headY,sz*.3,0,Math.PI*2);ctx.fill();
-  ctx.shadowBlur=0;
-  ctx.strokeStyle=stoneMid;ctx.lineWidth=2;
-  ctx.beginPath();ctx.arc(headX,headY,sz*.3,0,Math.PI*2);ctx.stroke();
-
-  const bloomCount=7;
+  ctx.beginPath();ctx.arc(h.x,h.y,headR,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+  ctx.strokeStyle=stoneMid;ctx.lineWidth=2;ctx.beginPath();ctx.arc(h.x,h.y,headR,0,Math.PI*2);ctx.stroke();
+  // crystal crown
   ctx.shadowColor=glow;ctx.shadowBlur=12;
-  for(let i=0;i<bloomCount;i++){
-    const a=(i/bloomCount)*Math.PI*2;
-    const blen=sz*(.16+.08*(i%2));
+  for(let i=0;i<7;i++){const a=(i/7)*Math.PI*2, blen=sz*(.14+.07*(i%2));
     ctx.strokeStyle=crystal;ctx.lineWidth=sz*.06;ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(headX+Math.cos(a)*sz*.2,headY+Math.sin(a)*sz*.2);
-    ctx.lineTo(headX+Math.cos(a)*(sz*.2+blen),headY+Math.sin(a)*(sz*.2+blen));ctx.stroke();
-  }
+    ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*headR*.7,h.y+Math.sin(a)*headR*.7);
+    ctx.lineTo(h.x+Math.cos(a)*(headR*.7+blen),h.y+Math.sin(a)*(headR*.7+blen));ctx.stroke();}
   ctx.shadowBlur=0;
-
+  // eyes
   ctx.fillStyle=crystal;ctx.shadowColor=glow;ctx.shadowBlur=9;
-  ctx.beginPath();ctx.arc(headX-sz*.09,headY,sz*.05,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(headX+sz*.09,headY,sz*.05,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(h.x-sz*.09,h.y-sz*.02,sz*.05,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(h.x+sz*.09,h.y-sz*.02,sz*.05,0,Math.PI*2);ctx.fill();
   if(!fl){ctx.fillStyle='#1a0800';ctx.shadowBlur=0;
-    ctx.beginPath();ctx.arc(headX-sz*.09,headY,sz*.02,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(headX+sz*.09,headY,sz*.02,0,Math.PI*2);ctx.fill();}
+    ctx.beginPath();ctx.arc(h.x-sz*.09,h.y-sz*.02,sz*.02,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(h.x+sz*.09,h.y-sz*.02,sz*.02,0,Math.PI*2);ctx.fill();}
   ctx.shadowBlur=0;
-
   if(b.phase>=2){
-    for(let i=0;i<5;i++){
-      const a=G.t*.9+i*1.257;
-      const f=.25+.2*Math.sin(G.t*3.5+i);
-      ctx.strokeStyle=`rgba(255,140,40,${f})`;ctx.lineWidth=sz*.06;
-      ctx.shadowColor=glow;ctx.shadowBlur=14;
-      ctx.beginPath();ctx.moveTo(Math.cos(a)*sz*.08,Math.sin(a)*sz*.08);
-      ctx.lineTo(Math.cos(a)*sz*.35,Math.sin(a)*sz*.35);ctx.stroke();
-    }
+    for(let i=0;i<5;i++){const a=G.t*.9+i*1.257, f=.25+.2*Math.sin(G.t*3.5+i);
+      ctx.strokeStyle=`rgba(255,140,40,${f})`;ctx.lineWidth=sz*.06;ctx.shadowColor=glow;ctx.shadowBlur=14;
+      ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*sz*.06,h.y+Math.sin(a)*sz*.06);
+      ctx.lineTo(h.x+Math.cos(a)*sz*.28,h.y+Math.sin(a)*sz*.28);ctx.stroke();}
     ctx.shadowBlur=0;
   }
 }
@@ -9422,6 +10015,7 @@ function drawBoss(){
   const rid=G.curRealm?.id;
   if(rid==='forsaken') drawLichSprite(b,sz,col,fl);
   else if(rid==='mountain') drawWyrmSprite(b,sz,col,fl);
+  else if(rid==='ice') drawYetiSprite(b,sz,col,fl);
   else drawDragonSprite(b,sz,col,fl);
   // Name + HP bar — hide during death sequence
   if(!b.dying){
@@ -9439,6 +10033,50 @@ function drawBoss(){
     ctx.fillText(b.name,0,barY-4);ctx.shadowBlur=0;
   }
   ctx.restore();
+}
+
+function drawYetiSprite(b,sz,col,fl){
+  const t=G.t;
+  const bob=Math.sin(t*2)*sz*.04;
+  ctx.translate(0,bob);
+  // Frost aura
+  ctx.shadowColor='#aee0ff';ctx.shadowBlur=fl?30:16;
+  // Body — furry rounded torso (jagged fur silhouette)
+  const bw=sz*1.05,bh=sz*1.15,segs=22;
+  ctx.fillStyle=col;ctx.beginPath();
+  for(let i=0;i<=segs;i++){const a=i/segs*Math.PI*2;const fur=1+(i%2?.06:-.02)+Math.sin(a*5+t*1.5)*.03;
+    ctx.lineTo(Math.cos(a)*bw*fur,Math.sin(a)*bh*fur*.92+sz*.1);}
+  ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+  // Lighter belly
+  ctx.fillStyle='rgba(255,255,255,.18)';
+  ctx.beginPath();ctx.ellipse(0,sz*.28,bw*.5,bh*.5,0,0,Math.PI*2);ctx.fill();
+  // Arms
+  const sw=Math.sin(t*2.4)*sz*.08;
+  [[-1,sw],[1,-sw]].forEach(([sgn,s2])=>{
+    ctx.save();ctx.translate(sgn*bw*.9,-sz*.08+s2);
+    ctx.fillStyle=col;ctx.beginPath();ctx.ellipse(0,sz*.2,sz*.32,sz*.5,sgn*.2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#e6f3ff';
+    for(let c=0;c<3;c++){ctx.beginPath();ctx.ellipse((c-1)*sz*.12,sz*.62,sz*.05,sz*.1,0,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  });
+  // Head
+  ctx.fillStyle=col;ctx.beginPath();ctx.ellipse(0,-sz*.78,sz*.62,sz*.55,0,0,Math.PI*2);ctx.fill();
+  // Brow fur tufts
+  ctx.fillStyle='rgba(255,255,255,.2)';
+  ctx.beginPath();ctx.moveTo(-sz*.6,-sz*1.05);ctx.lineTo(-sz*.3,-sz*1.32);ctx.lineTo(-sz*.08,-sz*1.02);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(sz*.6,-sz*1.05);ctx.lineTo(sz*.3,-sz*1.32);ctx.lineTo(sz*.08,-sz*1.02);ctx.closePath();ctx.fill();
+  // Glowing eyes
+  ctx.shadowColor='#9cd8ff';ctx.shadowBlur=10;ctx.fillStyle='#dff4ff';
+  ctx.beginPath();ctx.arc(-sz*.24,-sz*.82,sz*.1,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(sz*.24,-sz*.82,sz*.1,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;ctx.fillStyle='#0a2030';
+  ctx.beginPath();ctx.arc(-sz*.24,-sz*.82,sz*.045,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(sz*.24,-sz*.82,sz*.045,0,Math.PI*2);ctx.fill();
+  // Mouth + tusks
+  ctx.fillStyle='#0a1a26';ctx.beginPath();ctx.ellipse(0,-sz*.55,sz*.22,sz*.12,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#eaf6ff';
+  ctx.beginPath();ctx.moveTo(-sz*.14,-sz*.58);ctx.lineTo(-sz*.1,-sz*.4);ctx.lineTo(-sz*.04,-sz*.58);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(sz*.14,-sz*.58);ctx.lineTo(sz*.1,-sz*.4);ctx.lineTo(sz*.04,-sz*.58);ctx.closePath();ctx.fill();
 }
 
 function drawProjs(){
@@ -9462,6 +10100,40 @@ function drawProjs(){
       ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(pr.x,pr.y,9,0,Math.PI*2);ctx.fill();
       ctx.fillStyle=lc;ctx.beginPath();ctx.arc(pr.x,pr.y,5,0,Math.PI*2);ctx.fill();
       ctx.shadowBlur=0;ctx.globalAlpha=1;
+    } else if(pr._jesterBomb){
+      // Classic round bomb with a sparking fuse + smoke trail
+      const turbo=pr._turboBomb, r=turbo?7:5;
+      pr.trail.forEach((t,i)=>{const f=1-i/pr.trail.length;
+        ctx.globalAlpha=f*.26;ctx.fillStyle='#8a8a92';
+        ctx.beginPath();ctx.arc(t.x,t.y,5*f,0,Math.PI*2);ctx.fill();});
+      ctx.globalAlpha=1;
+      ctx.save();ctx.translate(pr.x,pr.y);
+      ctx.rotate(Math.sin(G.t*6+pr.x*.05)*0.22);
+      // body
+      ctx.shadowColor=turbo?'#ff5522':'rgba(0,0,0,.8)';ctx.shadowBlur=turbo?15:6;
+      const bg=ctx.createRadialGradient(-r*.3,-r*.3,r*.2,0,0,r);
+      bg.addColorStop(0,turbo?'#5a3030':'#3c3c46');bg.addColorStop(1,turbo?'#1a0606':'#0e0e16');
+      ctx.fillStyle=bg;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle=turbo?'#bb4422':'#56565f';ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
+      // specular highlight
+      ctx.fillStyle='rgba(255,255,255,.42)';ctx.beginPath();ctx.arc(-r*.36,-r*.36,r*.22,0,Math.PI*2);ctx.fill();
+      // fuse cap + string
+      ctx.fillStyle='#6a5030';ctx.fillRect(-r*.28,-r-3,r*.56,4);
+      ctx.strokeStyle='#c8a060';ctx.lineWidth=2;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(0,-r-1);ctx.quadraticCurveTo(r*.7,-r-6,r*.5,-r-10);ctx.stroke();
+      // sparking tip
+      const sx=r*.5,sy=-r-10,sf=.6+.4*Math.sin(G.t*30+pr.x);
+      ctx.shadowColor='#ffcc33';ctx.shadowBlur=11;
+      ctx.fillStyle=`rgba(255,${200+Math.floor(40*sf)},90,${.85})`;
+      ctx.beginPath();ctx.arc(sx,sy,2.2*sf+1.3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(sx,sy,1.1*sf,0,Math.PI*2);ctx.fill();
+      for(let s=0;s<3;s++){const sa=G.t*9+s*2.1,sd=3+Math.sin(G.t*22+s)*2;
+        ctx.fillStyle=`rgba(255,${170+s*25},60,${.4+.35*Math.sin(G.t*26+s)})`;
+        ctx.beginPath();ctx.arc(sx+Math.cos(sa)*sd,sy+Math.sin(sa)*sd,1,0,Math.PI*2);ctx.fill();}
+      ctx.shadowBlur=0;
+      ctx.restore();
     } else if(pr.isLob){
       // Lob bomb — large pulsing fire orb with smoke trail
       const pulse=.85+.15*Math.sin(G.t*12+pr.x);
@@ -10429,8 +11101,11 @@ function drawPause(){
     {label:'CONTROLS',bg:'#141a28',glow:'#4a6699'},
     {label:(G.muted?'🔇':'🔊')+' SOUND',bg:'#141820',glow:'#335566'},
     {label:(typeof MUSIC!=='undefined'&&MUSIC.isEnabled()?'🎵':'🔇')+' MUSIC',bg:'#161426',glow:'#5a3a99'},
-    {label:'QUIT TO TOWER',bg:'#1a1218',glow:'#663344'},
   ];
+  // Changing class re-rolls your build, so only offer it from the tower (not mid-dungeon)
+  // and not in co-op (a mid-session class swap would desync the party).
+  if(G._preMode==='hub'&&!MP.enabled)items.push({label:'CHANGE HERO',bg:'#181426',glow:'#7a5acc'});
+  items.push({label:'QUIT TO TOWER',bg:'#1a1218',glow:'#663344'});
   const bh=40,gap=8,header=64,pad=18;
   const pw=Math.min(300,W*.82),ph=header+items.length*(bh+gap)+pad,px=(W-pw)/2,py=(H-ph)/2;
   ctx.fillStyle='#0e0c1e';ctx.fillRect(px,py,pw,ph);
@@ -10696,12 +11371,12 @@ function updTeamCards(){
     const col=p.charAccent||p.charPrimary||'#888';
     const lives=Math.max(0,p.lives===undefined?3:p.lives);
     const dist=G.p&&(MODE==='level'||MODE==='boss')?Math.hypot((p.x||0)-G.p.x,(p.y||0)-G.p.y):0;
-    const farTag=(MODE==='level'||MODE==='boss')&&dist>TL*12?'<span style="color:#774">·far</span>':'';
-    cards.push(`<div class="team-card${dead?' dead':''}">
-      <div class="team-card-dot" style="background:${col};color:${col}"></div>
+    const farTag=(MODE==='level'||MODE==='boss')&&dist>TL*12?'<span style="color:#b0a070">·far</span>':'';
+    cards.push(`<div class="team-card${dead?' dead':''}" style="--pc:${col}">
+      <div class="team-card-dot" style="background:${col};color:${col}">P${i+1}</div>
       <div class="team-card-info">
-        <div class="team-card-name">P${i+1} ${farTag}</div>
-        <div class="team-card-hp"><div class="team-card-hpf" style="width:${hpFrac*100}%;background:${dead?'#444':'linear-gradient(90deg,#c8302a,#e85040)'}"></div></div>
+        <div class="team-card-name"><span>${CHAR_CLASSES&&p.charClass?(p.charClass[0].toUpperCase()+p.charClass.slice(1)):'Player '+(i+1)}</span><span>${dead?'<span style="color:#c55">DOWN</span>':farTag}</span></div>
+        <div class="team-card-hp"><div class="team-card-hpf" style="width:${hpFrac*100}%;background:${dead?'#444':'linear-gradient(90deg,#991a1a,#dd3333)'}"></div></div>
         <div class="team-card-stats"><span>⚜${p.gold||0}</span><span>${'♥'.repeat(lives)||'·'}</span>${p.item?'<span style="color:#88ffcc">'+p.item.replace('_',' ')+'</span>':''}</div>
       </div>
     </div>`);
@@ -10736,6 +11411,9 @@ function loop(ts){
 
     if(MODE==='charselect'){
       drawCharSelect();
+    } else if(MODE==='bossSelect'){
+      drawHub();
+      drawBossSelect();
     } else if(MODE==='summary'){
       // Render frozen level/hub behind the overlay
       if(G.lv)renderLevel();else drawHub();
@@ -10781,6 +11459,7 @@ function loop(ts){
           updateHazards(dt);
           if(MODE==='boss')updateBoss(dt);
         }
+        if(MODE==='boss')updateIceWall(dt); // host advances+damages; client feels the push
         updateDyingEnemies(dt); // clients need this too for death tumbles from broadcast
         updateProjs(dt);
         updateFamiliars(dt);
@@ -10806,10 +11485,10 @@ function loop(ts){
     try{
       let mt='menu';
       if(MODE==='charselect')mt='menu';
-      else if(MODE==='boss')mt='boss_'+(['forsaken','mountain','castle'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
+      else if(MODE==='boss')mt='boss_'+(['forsaken','mountain','castle','ice'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
       else if(MODE==='shop'||MODE==='summary')mt='shop'; // shop + level recap share the relaxed groove (reward/breather)
       else if(MODE==='hub')mt='hub'; // tower = calm tower theme
-      else if(MODE==='level')mt=(['forsaken','mountain','castle'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
+      else if(MODE==='level')mt=(['forsaken','mountain','castle','ice'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
       else if(MODE==='pause')mt=G._musicThemeBeforePause||'menu';
       else mt='menu';
       MUSIC.setTheme(mt);
@@ -11275,8 +11954,20 @@ function drawCharSelect(){
   ctx.textAlign='center';ctx.textBaseline='top';
   ctx.fillText('CHOOSE YOUR HERO',W/2,18);
   ctx.shadowBlur=0;
-  ctx.fillStyle='#334455';ctx.font=`${Math.round(11*uiF)}px Cinzel,serif`;
+  ctx.fillStyle='#bdb5d0';ctx.font=`${Math.round(11*uiF)}px Cinzel,serif`;
   ctx.fillText('Conquer the realms to unlock new classes',W/2,18+Math.min(34,W*.075));
+
+  // Back button — only when swapping heroes mid-game (gives mobile a cancel affordance)
+  G._csBackBtn=null;
+  if(G._changingHero){
+    const bw=Math.round(74*uiF),bh=Math.round(26*uiF),bx=10,by=12;
+    ctx.fillStyle='#161226';ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle='#6a5aa0';ctx.lineWidth=1.2;ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle='#c8c0e8';ctx.font=`${Math.round(11*uiF)}px Cinzel,serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('← BACK',bx+bw/2,by+bh/2);
+    ctx.textAlign='center';ctx.textBaseline='top';
+    G._csBackBtn={x:bx,y:by,w:bw,h:bh};
+  }
 
   // ── Character grid — 2×4 on mobile, 4×2 on desktop ──
   const cols=portrait?2:4,rows=portrait?4:2,pad=10,gap=portrait?10:6;
@@ -11336,13 +12027,13 @@ function drawCharSelect(){
     const nameSz=fitFont(cls.name,cw-12,Math.min(portrait?22:15,Math.floor(cw*0.13)),'bold');
     ctx.font=`bold ${nameSz}px Cinzel,serif`;
     ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillStyle=lk?'#33304a':sel?'#ffffff':'#8888aa';
+    ctx.fillStyle=lk?'#6a6486':sel?'#ffffff':'#c8c4de';
     ctx.fillText(cls.name,pcx,cy+ch*0.70);
 
     // Description — capped + auto-shrunk
     const descSz=fitFont(cls.desc,cw-10,Math.min(portrait?14:10,Math.floor(cw*0.09)),'');
     ctx.font=`${descSz}px Cinzel,serif`;
-    ctx.fillStyle=lk?'#22203a':'#556677';
+    ctx.fillStyle=lk?'#544f70':'#aca6c8';
     ctx.fillText(cls.desc,pcx,cy+ch*0.86);
 
     ctx.restore(); // end card clip
@@ -11369,7 +12060,7 @@ function drawCharSelect(){
 
   // ── Color swatches ──
   const swY=gridY+rows*(ch+gap)+14;
-  ctx.fillStyle='#445566';ctx.font=`${Math.round(11*uiF)}px Cinzel,serif`;
+  ctx.fillStyle='#bdb5d0';ctx.font=`${Math.round(11*uiF)}px Cinzel,serif`;
   ctx.textBaseline='top';ctx.fillText('COLOR',W/2,swY);
   G._csColorY=swY;
 
@@ -11391,7 +12082,7 @@ function drawCharSelect(){
       ctx.beginPath();ctx.arc(sx+swR-5,sy+swR-5,6,0,Math.PI*2);ctx.fill();
     }
     ctx.shadowBlur=0;
-    ctx.fillStyle=sel?'#fff':'#446';ctx.font=`${Math.round(9*uiF)}px Cinzel,serif`;
+    ctx.fillStyle=sel?'#fff':'#b6b0d0';ctx.font=`${Math.round(9*uiF)}px Cinzel,serif`;
     ctx.textBaseline='top';ctx.fillText(cc.label,sx+swR,sy+swR*2+4);
   });
 
@@ -11405,12 +12096,12 @@ function drawCharSelect(){
   ctx.strokeStyle=bc;ctx.lineWidth=2;ctx.strokeRect(btnX,btnY,btnW,btnH);
   ctx.shadowBlur=0;
   ctx.fillStyle=bc;ctx.font=`bold ${Math.round(13*(portrait?1.3:1))}px Cinzel,serif`;
-  ctx.textBaseline='middle';ctx.fillText('ENTER THE DUNGEON',W/2,btnY+btnH/2);
+  ctx.textBaseline='middle';ctx.fillText(G._changingHero?'CONFIRM HERO':'ENTER THE DUNGEON',W/2,btnY+btnH/2);
 
   // ── Stat preview for selected class ──
   if(selCls){
     const sy2=btnY+btnH+14;
-    ctx.fillStyle='#334455';ctx.font=`${Math.round(10*uiF)}px Cinzel,serif`;ctx.textBaseline='top';
+    ctx.fillStyle='#b8b0d2';ctx.font=`${Math.round(10*uiF)}px Cinzel,serif`;ctx.textBaseline='top';
     ctx.fillText(`ATK ${selCls.stats.atk}  ·  SPD ${selCls.stats.spd}  ·  HP ${selCls.stats.maxHp}`,W/2,sy2);
   }
 }
@@ -11431,6 +12122,9 @@ function handlePauseClick(cx,cy){
       } else if(b.label.includes('MUSIC')){
         if(typeof MUSIC!=='undefined')MUSIC.setEnabled(!MUSIC.isEnabled());
         return; // stay paused
+      } else if(b.label==='CHANGE HERO'){
+        openHeroChange();
+        return;
       } else if(b.label==='QUIT TO TOWER'){
         G.lv=null;G.projs=[];G.parts=[];G.dyingEnemies=[];
         G.p.x=HPSX;G.p.y=HPSY;
@@ -11445,6 +12139,11 @@ function handlePauseClick(cx,cy){
 }
 
 function handleCharSelectClick(px,py){
+  // Back (cancel a hero change without applying)
+  const bb=G._csBackBtn;
+  if(bb&&px>=bb.x&&px<=bb.x+bb.w&&py>=bb.y&&py<=bb.y+bb.h){
+    G._changingHero=false;MODE='hub';document.getElementById('hud').classList.add('hidden');return;
+  }
   // Card click
   (G._csCards||[]).forEach(({x,y,w,h,cls})=>{
     if(cls.locked)return;
@@ -11457,8 +12156,39 @@ function handleCharSelectClick(px,py){
   // Enter button
   const b=G._csBtnX;
   if(b&&px>=b&&px<=b+(G._csBtnW||200)&&py>=G._csBtnY&&py<=G._csBtnY+(G._csBtnH||40)){
-    startAdventure();
+    if(G._changingHero)applyHeroChange();
+    else startAdventure();
   }
+}
+
+// Open the Choose Your Hero screen from the pause menu to swap class/colour mid-game.
+// Pre-selects the current hero so the screen reflects who you're playing.
+function openHeroChange(){
+  selectedClass=G.p.charClass||selectedClass;
+  selectedColor=G.p.charColor||selectedColor;
+  G._changingHero=true;
+  MODE='charselect';
+  document.getElementById('hud').classList.add('hidden');
+}
+
+// Apply a new class/colour to the EXISTING character. Re-rolls the combat build (stats reset
+// to the new class's base, level/upgrades reset) but preserves meta-progress: unlocked realms,
+// boss clears, and your crystal/gold wallet.
+function applyHeroChange(){
+  const cls=CHAR_CLASSES.find(c=>c.id===selectedClass)||CHAR_CLASSES.find(c=>!c.locked);
+  const col=CHAR_COLORS.find(c=>c.id===selectedColor)||CHAR_COLORS[1];
+  const p=G.p;
+  p.charClass=cls.id;p.charColor=col.id;p.charPrimary=col.primary;p.charAccent=col.accent;
+  p.maxHp=cls.stats.maxHp;p.hp=cls.stats.maxHp;
+  p.atk=cls.stats.atk;p.spd=cls.stats.spd;
+  p.rate=cls.stats.rate||0;p.luck=cls.stats.luck||0;
+  p.level=1;p.xp=0;p.xpNext=150;
+  p.upgrades={atk:0,maxhp:0,spd:0};
+  p.turbo=0;p.item=null;p.itemTimer=0;p.familiar=null;p.keys=0;
+  G._changingHero=false;
+  MODE='hub';
+  document.getElementById('hud').classList.add('hidden');
+  showMsg(`Now playing as the ${cls.name}`);
 }
 
 function startAdventure(){
