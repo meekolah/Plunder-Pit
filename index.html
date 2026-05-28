@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Plunder Pit</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231a0f24'/%3E%3Cpath d='M16 22 L32 14 L48 22 L48 42 L32 50 L16 42 Z' fill='%23c8a030' stroke='%23f5d050' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%231a0f24'/%3E%3Cpath d='M28 30 L32 26 L36 30 L36 36 L32 38 L28 36 Z' fill='%23ff6622'/%3E%3C/svg%3E">
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -276,7 +277,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.98';
+const VERSION='1.99';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -6056,7 +6057,10 @@ function mpHandleMessage(d){
       dyingTimer:0,invuln:0,atkTimer:0,state:'idle',timer:0,chargeT:0,
       facing:{x:0,y:1},parts:[],_chainKb:false,hidden:false,
     }));
-    const items=(d.it||[]).map(a=>({type:a[0],x:a[1],y:a[2],val:a[3]}));
+    const items=(d.it||[]).map(a=>({type:a[0],x:a[1],y:a[2],val:a[3],
+      realm:typeof a[4]==='string'?a[4]:undefined,
+      id:typeof a[4]==='number'?a[4]:undefined,
+      bob:Math.random()*Math.PI*2}));
     const rooms=(d.rm||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],cx:a[0]+a[2]/2,cy:a[1]+a[3]/2}));
     const ps={x:d.ps[0],y:d.ps[1]};
     const sp=d.sp?{x:d.sp[0],y:d.sp[1]}:null;
@@ -7187,7 +7191,7 @@ function mpSendCurrentLevel(){
       e.type,Math.round(e.x),Math.round(e.y),
       e.hp,e.maxHp,e.atk||5,e.spd||80,e.col||'#888',e.sz||.5,e.tier||1,e.out||'#000'
     ]),
-    it:(G.lv.items||[]).filter(i=>!i.hidden).slice(0,40).map(i=>[i.type,Math.round(i.x),Math.round(i.y),i.val||0]),
+    it:(G.lv.items||[]).filter(i=>!i.hidden).map(i=>[i.type,Math.round(i.x),Math.round(i.y),i.val||0,i.id||i.realm||0]),
     sp2:(G.lv.spawners||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.hp,s.maxHp,s.interval,s.maxGrunts,s.tier||1]),
     secrets:(G.lv.secretPaths||[]).map(p=>[p.wallTx,p.wallTy,p.tiles||[]]),
     br:(G.lv.barrels||[]).map(b=>[Math.round(b.x),Math.round(b.y),b.shape||'crate']),
@@ -7196,7 +7200,6 @@ function mpSendCurrentLevel(){
     sw:(G.lv.switches||[]).map(s=>[s.x,s.y,s.did||0,s.hit?1:0]),
     drs:(G.lv.doors||[]).map(dr=>[dr.x,dr.y,dr.id||0,dr.open?1:0]),
   };
-  showMsg('lv size: '+JSON.stringify(payload).length+'B');
   mpSend(payload);
 }
 
