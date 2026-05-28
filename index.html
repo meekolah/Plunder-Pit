@@ -276,7 +276,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.96';
+const VERSION='1.97';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -5959,7 +5959,7 @@ function mpConnect(roomCode){
     MP.ably=ably;
     ably.connection.on('connected',()=>{
       MP.status='connected';
-      const ch=ably.channels.get('plunderpit-'+MP.roomCode);
+      const ch=ably.channels.get('plunderpit:'+MP.roomCode);
       MP.channel=ch;
       ch.subscribe('msg',(msg)=>{
         const d=msg.data;
