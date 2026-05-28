@@ -276,7 +276,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.86';
+const VERSION='1.95';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -1917,8 +1917,81 @@ function archetypeHornetsNest(r,map,realm,lvNum,spawners){
   }
 }
 
+// KILLBOX — checkerboard pillars for cover + ranged crossfire from the far wall
+function archetypeKillbox(r,map,realm,lvNum,spawners,enemies){
+  for(let ty=r.y+2;ty<r.y+r.h-2;ty+=2)for(let tx=r.x+2;tx<r.x+r.w-2;tx+=2){
+    if(Math.random()<.7&&map[ty]?.[tx]===TFLOOR)map[ty][tx]=TWALL; // 1-tile lanes between pillars stay open
+  }
+  const fx=r.x+r.w-2;
+  [[fx,r.y+1,'archer'],[fx,r.y+r.h-2,'lobber'],[fx,r.y+Math.floor(r.h/2),'archer']].forEach(([tx,ty,t])=>{
+    if(map[ty]?.[tx]===TFLOOR)enemies.push(mkEnemyByType(t,realm,(tx+.5)*TL,(ty+.5)*TL));
+  });
+  const my=r.y+Math.floor(r.h/2);
+  if(map[my]?.[r.x+1]===TFLOOR)spawners.push(mkSpawnerObj(r.x+1,my,realm,lvNum,{maxGrunts:3}));
+}
+
+// CURSED CACHE — a tempting unguarded reward; grabbing the chest springs an ambush
+function archetypeCursedCache(r,map,realm,lvNum,spawners,enemies,items){
+  const cx=r.x+Math.floor(r.w/2),cy=r.y+Math.floor(r.h/2);
+  if(map[cy]?.[cx]!==TFLOOR)return;
+  const POWERUPS=['triple_shot','rapid_fire','fury','barrier'];
+  items.push({type:'chest',locked:false,_cursed:true,x:(cx+.5)*TL,y:(cy+.5)*TL,bob:Math.random()*Math.PI*2,
+    loot:POWERUPS[rand(0,POWERUPS.length-1)]});
+  if(map[cy-1]?.[cx]===TFLOOR)
+    items.push({type:'crystal',_puzzle:true,realm:realm.id,x:(cx+.5)*TL,y:(cy-1+.5)*TL,bob:Math.random()*Math.PI*2});
+  // No enemies pre-placed — the ambush spawns on pickup (see openChest / item handler)
+}
+
+// CRUCIBLE — on entry the room seals; clear escalating waves to open it (runtime: updateArchetypes)
+function archetypeCrucible(r,map,realm,lvNum,spawners,enemies){
+  r.crucible={state:'idle',wave:0,waves:2+Math.min(2,Math.floor(lvNum/2)),sealTiles:[]};
+}
+
+// INFERNO — on entry the floor erupts with telegraphed hazard zones while you fight (runtime)
+function archetypeInferno(r,map,realm,lvNum,spawners,enemies){
+  r.inferno={active:false,started:false,timer:0};
+  const pts=[];
+  for(let ty=r.y+1;ty<r.y+r.h-1;ty++)for(let tx=r.x+1;tx<r.x+r.w-1;tx++)if(map[ty]?.[tx]===TFLOOR)pts.push([tx,ty]);
+  pts.sort(()=>Math.random()-.5);
+  pts.slice(0,3).forEach(([tx,ty])=>enemies.push(mkEnemyByType('walker',realm,(tx+.5)*TL,(ty+.5)*TL)));
+  if(pts.length>3){const[sx,sy]=pts[3];spawners.push(mkSpawnerObj(sx,sy,realm,lvNum,{maxGrunts:3}));}
+}
+
+// SPIKE GAUNTLET — rows of spikes with a shifting safe lane, ranged enemies punish hesitation
+function archetypeSpikeGauntlet(r,map,realm,lvNum,spawners,enemies){
+  for(let ty=r.y+2;ty<r.y+r.h-2;ty+=2){
+    const gap=r.x+1+rand(0,Math.max(0,r.w-4));
+    for(let tx=r.x+1;tx<r.x+r.w-1;tx++){
+      if(tx>=gap&&tx<gap+2)continue;                 // 2-tile safe lane through the row
+      if(map[ty]?.[tx]===TFLOOR)map[ty][tx]=TSPIKE;
+    }
+  }
+  const fx=r.x+r.w-2;
+  [r.y+1,r.y+r.h-2].forEach(ty=>{if(map[ty]?.[fx]===TFLOOR)enemies.push(mkEnemyByType('archer',realm,(fx+.5)*TL,(ty+.5)*TL));});
+  const my=r.y+Math.floor(r.h/2);
+  if(map[my]?.[fx]===TFLOOR)enemies.push(mkEnemyByType('lobber',realm,(fx+.5)*TL,(my+.5)*TL));
+}
+
+// REANIMATOR — a necromancer elite keeps raising the dead until you kill IT (runtime summons)
+function archetypeReanimator(r,map,realm,lvNum,spawners,enemies){
+  const cx=r.x+Math.floor(r.w/2),cy=r.y+Math.floor(r.h/2);
+  if(map[cy]?.[cx]===TFLOOR){
+    const necro=mkEnemyByType('walker',realm,(cx+.5)*TL,(cy+.5)*TL);
+    applyElite(necro);
+    necro._necro=true;necro._necroTimer=3.5;necro._necroMax=4;necro.col='#9b6cff';
+    enemies.push(necro);
+  }
+  const pts=[];
+  for(let ty=r.y+1;ty<r.y+r.h-1;ty++)for(let tx=r.x+1;tx<r.x+r.w-1;tx++)
+    if(map[ty]?.[tx]===TFLOOR&&!(tx===cx&&ty===cy))pts.push([tx,ty]);
+  pts.sort(()=>Math.random()-.5);
+  pts.slice(0,3).forEach(([tx,ty])=>enemies.push(mkEnemyByType('walker',realm,(tx+.5)*TL,(ty+.5)*TL)));
+}
+
 const ARCHETYPE_LABELS={gauntlet:'CROSSFIRE!',pit:'SURROUNDED!',minefield:'MINEFIELD!',
-  siege:'UNDER SIEGE!',ambush:'AMBUSH!',elite_chamber:'CHAMPIONS!',hornets_nest:'SWARM!'};
+  siege:'UNDER SIEGE!',ambush:'AMBUSH!',elite_chamber:'CHAMPIONS!',hornets_nest:'SWARM!',
+  killbox:'KILLBOX!',cursed_cache:'CURSED CACHE',crucible:'THE CRUCIBLE!',inferno:'INFERNO!',
+  spike_gauntlet:'SPIKE GAUNTLET!',reanimator:'THE REANIMATOR!'};
 
 function genLevel(realm,lvNum,isBoss){
   const map=Array.from({length:MH},()=>Array(MW).fill(TWALL));
@@ -2008,7 +2081,8 @@ function genLevel(realm,lvNum,isBoss){
   const mrooms=rooms.slice(1,-1);
 
   // ── ARCHETYPES — 2-3 per floor, assigned before default placement ──
-  const ARCHETYPE_LIST=['gauntlet','pit','minefield','siege','ambush','elite_chamber','hornets_nest'];
+  const ARCHETYPE_LIST=['gauntlet','pit','minefield','siege','ambush','elite_chamber','hornets_nest',
+    'killbox','cursed_cache','crucible','inferno','spike_gauntlet','reanimator'];
   const shuffledMid=[...mrooms].sort(()=>Math.random()-.5);
   const archetypeCount=Math.min(rand(2,3),shuffledMid.length);
   const usedTypes=new Set();
@@ -2016,6 +2090,8 @@ function genLevel(realm,lvNum,isBoss){
     const available=ARCHETYPE_LIST.filter(t=>{
       if(usedTypes.has(t))return false;
       if(t==='hornets_nest'&&(r.w<7||r.h<7))return false; // needs a big room
+      if((t==='crucible'||t==='inferno'||t==='killbox')&&(r.w<7||r.h<6))return false;
+      if((t==='spike_gauntlet'||t==='reanimator'||t==='cursed_cache')&&(r.w<6||r.h<6))return false;
       return true;
     });
     if(!available.length)return;
@@ -2054,9 +2130,27 @@ function genLevel(realm,lvNum,isBoss){
         activeGrunts:0, maxGrunts:4,
       });
     }
-    // 35% chance: switch-door puzzle
-    if(Math.random()<.35&&r.w>=6&&r.h>=5)placePuzzle(map,r,switches,doors,items,realm);
   });
+
+  // ── Switch-door VAULT puzzle — vault sealed in one room, switch in a DIFFERENT room ──
+  if(Math.random()<.7){
+    // Try the biggest non-archetype mid rooms first; build in the first that fits a vault
+    const cands=mrooms.filter(rm=>!rm.archetype).sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+    let vaultRoom=null,did=null;
+    for(const rm of cands){did=buildVault(map,rm,doors,items,realm);if(did){vaultRoom=rm;break;}}
+    if(did){
+      const swRooms=mrooms.filter(rm=>!rm.archetype&&rm!==vaultRoom);
+      if(swRooms.length){
+        // prefer the farther half of rooms so finding the switch is a small hunt
+        swRooms.sort((a,b)=>(((b.cx-vaultRoom.cx)**2+(b.cy-vaultRoom.cy)**2)-((a.cx-vaultRoom.cx)**2+(a.cy-vaultRoom.cy)**2)));
+        const pickFrom=swRooms.slice(0,Math.max(1,Math.ceil(swRooms.length/2)));
+        let ok=placeSwitchIn(map,pickFrom[rand(0,pickFrom.length-1)],switches,did);
+        if(!ok)ok=placeSwitchIn(map,vaultRoom,switches,did); // safety: never leave a door with no switch
+      } else {
+        placeSwitchIn(map,vaultRoom,switches,did);
+      }
+    }
+  }
 
   // ── OCCUPATION MAP — prevents any two meaningful objects sharing a tile ──
   // (switch-door rewards are exempt; they live in a partitioned room half)
@@ -2066,6 +2160,8 @@ function genLevel(realm,lvNum,isBoss){
   // Protect a 1-tile radius around the exit portal so nothing covers it
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)occ.add(`${lr.cx+dx},${lr.cy+dy}`);
   switches.forEach(sw=>occ.add(`${sw.x},${sw.y}`));
+  // Vault rewards sit inside a sealed cell — reserve their tiles so no enemy/loot spawns on them
+  items.forEach(it=>{if(it._puzzle)occ.add(`${Math.floor(it.x/TL)},${Math.floor(it.y/TL)}`);});
 
   // Gold in rooms (small amounts)
   rooms.forEach((r,i)=>{
@@ -2319,6 +2415,12 @@ function genLevel(realm,lvNum,isBoss){
       case 'ambush':     archetypeAmbush(r,map,realm,lvNum,aSpawners);break;
       case 'elite_chamber': archetypeEliteChamber(r,map,realm,lvNum,aEnemies);break;
       case 'hornets_nest':  archetypeHornetsNest(r,map,realm,lvNum,aSpawners);break;
+      case 'killbox':       archetypeKillbox(r,map,realm,lvNum,aSpawners,aEnemies);break;
+      case 'cursed_cache':  archetypeCursedCache(r,map,realm,lvNum,aSpawners,aEnemies,items);break;
+      case 'crucible':      archetypeCrucible(r,map,realm,lvNum,aSpawners,aEnemies);break;
+      case 'inferno':       archetypeInferno(r,map,realm,lvNum,aSpawners,aEnemies);break;
+      case 'spike_gauntlet':archetypeSpikeGauntlet(r,map,realm,lvNum,aSpawners,aEnemies);break;
+      case 'reanimator':    archetypeReanimator(r,map,realm,lvNum,aSpawners,aEnemies);break;
     }
     spawners.push(...aSpawners);
     placedEnemies.push(...aEnemies);
@@ -2577,21 +2679,39 @@ function genRealmDecos(rooms,realm){
   return decos;
 }
 
-function placePuzzle(map,r,switches,doors,items,realm){
-  const mx=r.x+Math.floor(r.w/2),my=r.y+rand(1,r.h-2);
-  if(map[my][mx]!==TFLOOR)return;
+function buildVault(map,r,doors,items,realm){
+  // Seal a small 4×4 vault into room r — reward locked behind ONE door. Returns the door id
+  // so the switch (placed elsewhere) can be linked to it. Reward stays unreachable until opened.
+  const vw=4,vh=4;
+  if(r.w<vw+2||r.h<vh+2)return null;             // fits any room >=6 wide & >=6 tall (1-tile margin all round)
+  const vx=r.x+r.w-vw-1;                          // hug the right side, margin from the room edge
+  let vy=r.y+Math.floor((r.h-vh)/2);
+  vy=Math.max(r.y+1,Math.min(vy,r.y+r.h-vh-1));   // top & bottom margin so the room's ring stays open
+  if(vx<r.x+1||vy<1||vy+vh>=MH||vx+vw>=MW)return null;
+  for(let yy=vy;yy<vy+vh;yy++)for(let xx=vx;xx<vx+vw;xx++){
+    if(xx<=0||xx>=MW-1||yy<=0||yy>=MH-1)continue;
+    const edge=(xx===vx||xx===vx+vw-1||yy===vy||yy===vy+vh-1);
+    map[yy][xx]=edge?TWALL:TFLOOR;
+  }
   const did='d'+Math.random().toString(36).slice(2,6);
-  map[my][mx]=TDOOR;
-  doors.push({x:mx,y:my,id:did,open:false});
-  const swx=r.x+rand(1,Math.floor(r.w/2)-1),swy=r.y+rand(1,r.h-2);
-  if(map[swy][swx]===TFLOOR)
-    switches.push({x:swx,y:swy,did,hit:false,ph:Math.random()*Math.PI*2});
-  // Reward: unlocked chest with good loot behind the door
+  const doorY=vy+1;
+  map[doorY][vx]=TDOOR;
+  doors.push({x:vx,y:doorY,id:did,open:false});
+  // Reward — powerup chest + gold + a crystal, all flagged so nothing else spawns on them
   const POWERUPS=['triple_shot','rapid_fire','fury','barrier'];
-  const rx2=r.x+rand(Math.floor(r.w/2)+1,r.w-2),ry2=r.y+rand(1,r.h-2);
-  items.push({type:'chest',locked:false,x:(rx2+.5)*TL,y:(ry2+.5)*TL,bob:Math.random()*Math.PI*2,
+  items.push({type:'chest',locked:false,_puzzle:true,x:(vx+1+.5)*TL,y:(vy+1+.5)*TL,bob:Math.random()*Math.PI*2,
     loot:POWERUPS[rand(0,POWERUPS.length-1)]});
-  items.push({type:'gold',x:(rx2+.5)*TL,y:(ry2+1.5)*TL,val:rand(25,50),bob:Math.random()*Math.PI*2});
+  items.push({type:'gold',_puzzle:true,x:(vx+2+.5)*TL,y:(vy+1+.5)*TL,val:rand(35,65),bob:Math.random()*Math.PI*2});
+  items.push({type:'crystal',_puzzle:true,realm:realm.id,x:(vx+1+.5)*TL,y:(vy+2+.5)*TL,bob:Math.random()*Math.PI*2});
+  return did;
+}
+function placeSwitchIn(map,r,switches,did){
+  // Drop a pressure-plate switch on open floor in room r, linked to door id `did`
+  for(let tries=0;tries<24;tries++){
+    const sx=r.x+rand(1,r.w-2),sy=r.y+rand(1,r.h-2);
+    if(map[sy]&&map[sy][sx]===TFLOOR){switches.push({x:sx,y:sy,did,hit:false,ph:Math.random()*Math.PI*2});return true;}
+  }
+  return false;
 }
 
 function carveCorr(map,x1,y1,x2,y2){
@@ -4370,6 +4490,8 @@ function updatePlayer(dt){
       });
       if(entered){
         r.entered=true;
+        if(r.crucible)r.crucible.state='start';   // seal + waves handled in updateArchetypes
+        if(r.inferno)r.inferno.active=true;        // hazard storm begins
         G.lv.enemies.forEach(e=>{
           const ex=e.x/TL,ey=e.y/TL;
           if(ex>r.x&&ex<r.x+r.w&&ey>r.y&&ey<r.y+r.h){
@@ -4464,6 +4586,18 @@ function updatePlayer(dt){
         else if(!item._keyMsg){item._keyMsg=true;addFT('Need a key!',item.x,item.y,'#cc4444');return true;}
         else{return true;}
       } else {SFX.chest();pendingDrops.push(...openChest(item));}
+      if(item._cursed&&G.curRealm){
+        // The cache was cursed — an ambush erupts around whoever grabbed it
+        addShake(9);showMsg('A CURSE! YOU ARE NOT ALONE...');
+        const n=3+Math.floor((G.curLvNum||0)/2);
+        for(let i=0;i<n;i++){
+          const a=Math.random()*Math.PI*2,d=TL*(1.6+Math.random()*1.4);
+          const ex=item.x+Math.cos(a)*d,ey=item.y+Math.sin(a)*d;
+          const e=(i===0)?mkEnemyByType('grunt_heavy',G.curRealm,ex,ey):mkGrunt(G.curRealm,Math.random()<.4,ex,ey);
+          if(i===0)applyElite(e);
+          e.state='chase';G.lv.enemies.push(e);spawnP(ex,ey,e.col||'#cc4444',8);
+        }
+      }
     }
     else if(item.type==='powerup'){
       const names={triple_shot:'3-Way Shot',rapid_fire:'Rapid Fire',fury:'Fury',barrier:'Barrier'};
@@ -4587,7 +4721,7 @@ function fireProj(p){
   if(p.charClass==='jester'){
     const aim=getAimDir(p);
     p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
-    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
+    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury',p.charClass);
     const furyMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
     const bombAtk=p.atk*1.5*furyMul*critMul;
     if(crit)critFX(p.x,p.y);
@@ -4621,7 +4755,7 @@ function fireProj(p){
     const furyMul=(p.item==='fury'?1.8:1)*(MUT('fortune')?0.75:1);
     const hspd=PROJSPD*0.6;
     p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
-    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
+    SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury',p.charClass);
     G.projs.push({
       x:p.x+aim.dx*TL*.5,y:p.y+aim.dy*TL*.5,
       vx:aim.dx*hspd,vy:aim.dy*hspd,
@@ -4643,7 +4777,7 @@ function fireProj(p){
   const aim=getAimDir(p);
   const px=p.x+aim.dx*TL*.5,py=p.y+aim.dy*TL*.5;
   p.attacking=true;p.atkProg=0;p.atkAngle=Math.atan2(aim.dy,aim.dx);
-  SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury');
+  SFX.atPos(p.x,p.y);SFX.shoot(p.item==='fury',p.charClass);
   if(p.item==='triple_shot'){
     const a=Math.atan2(aim.dy,aim.dx);
     [-0.32,0,0.32].forEach(off=>{
@@ -4711,7 +4845,7 @@ function doMelee(p,target){
   const willKill=target.hp-dmg<=0;
   hitEnemy(target,dmg);
   if(crit)critFX(target.x,target.y);
-  SFX.atPos(p.x,p.y);SFX.swing();
+  SFX.atPos(p.x,p.y);SFX.swing(p.charClass);
   SFX.atPos(target.x,target.y);SFX.hit(target.type==='golem'||target.type==='grunt_heavy');
   G.hitStop=Math.max(G.hitStop,willKill?3:1);
   p.turbo=Math.min(p.turboMax2||200,p.turbo+4);
@@ -4801,7 +4935,7 @@ function doTurboAOE(p){
 function doSpinAttack(p){
   if(!G.lv)return;
   SFX.turboFire();
-  if(SFX.swing)SFX.swing();
+  if(SFX.swing)SFX.swing(p.charClass);
   if(MP.enabled&&!MP.isHost&&p===G.p){
     mpSend({type:'spinAttack',x:Math.round(p.x),y:Math.round(p.y),playerId:MP.playerId});
   }
@@ -5376,6 +5510,88 @@ function mkGrunt(realm,isHeavy,x,y,spawnerRef=null){
   const eliteChance=Math.min(0.40, 0.12+(G.curLvNum||0)*0.05);
   if(Math.random()<eliteChance)applyElite(e);
   return e;
+}
+
+// ── ARCHETYPE RUNTIME — crucible waves/seal, inferno hazards, reanimator summons ──
+function countEnemiesIn(r){
+  let n=0;
+  G.lv.enemies.forEach(e=>{if(e.alive){const ex=e.x/TL,ey=e.y/TL;if(ex>r.x&&ex<r.x+r.w&&ey>r.y&&ey<r.y+r.h)n++;}});
+  G.lv.spawners.forEach(sp=>{if(sp.alive&&sp.tx>=r.x&&sp.tx<r.x+r.w&&sp.ty>=r.y&&sp.ty<r.y+r.h)n++;});
+  return n;
+}
+function sealRoom(r,cr){
+  cr.sealTiles=[];const m=G.lv.map,ring=[];
+  for(let x=r.x-1;x<=r.x+r.w;x++){ring.push([x,r.y-1]);ring.push([x,r.y+r.h]);}
+  for(let y=r.y;y<r.y+r.h;y++){ring.push([r.x-1,y]);ring.push([r.x+r.w,y]);}
+  ring.forEach(([x,y])=>{if(m[y]&&m[y][x]===TFLOOR){m[y][x]=TDOOR;cr.sealTiles.push([x,y]);(G._mpMapUpd=G._mpMapUpd||[]).push([x,y,TDOOR]);}});
+}
+function unsealRoom(r,cr){
+  const m=G.lv.map;
+  cr.sealTiles.forEach(([x,y])=>{if(m[y]){m[y][x]=TFLOOR;(G._mpMapUpd=G._mpMapUpd||[]).push([x,y,TFLOOR]);}});
+  cr.sealTiles=[];
+}
+function spawnCrucibleWave(r,cr){
+  cr.wave++;
+  const m=G.lv.map,pts=[];
+  for(let ty=r.y+1;ty<r.y+r.h-1;ty++)for(let tx=r.x+1;tx<r.x+r.w-1;tx++)if(m[ty]?.[tx]===TFLOOR)pts.push([tx,ty]);
+  pts.sort(()=>Math.random()-.5);
+  const cnt=Math.min(pts.length,3+cr.wave+Math.floor((G.curLvNum||0)/2));
+  for(let i=0;i<cnt;i++){
+    const[tx,ty]=pts[i%pts.length],roll=Math.random();let e;
+    if(roll<.2)e=mkEnemyByType('grunt_heavy',G.curRealm,(tx+.5)*TL,(ty+.5)*TL);
+    else if(roll<.4)e=mkEnemyByType('archer',G.curRealm,(tx+.5)*TL,(ty+.5)*TL);
+    else e=mkGrunt(G.curRealm,Math.random()<.5,(tx+.5)*TL,(ty+.5)*TL);
+    if(cr.wave===cr.waves&&i===0)applyElite(e);
+    e.state='chase';G.lv.enemies.push(e);spawnP(e.x,e.y,e.col,5);
+  }
+  addShake(5);
+}
+function dropCrucibleReward(r){
+  const cx=(r.x+Math.floor(r.w/2)+.5)*TL,cy=(r.y+Math.floor(r.h/2)+.5)*TL;
+  const POWERUPS=['triple_shot','rapid_fire','fury','barrier'];
+  G.lv.items.push({type:'chest',locked:false,x:cx,y:cy,bob:Math.random()*Math.PI*2,loot:POWERUPS[rand(0,POWERUPS.length-1)]});
+  G.lv.items.push({type:'crystal',realm:G.curRealm.id,x:cx,y:cy-TL,bob:Math.random()*Math.PI*2});
+  G.lv.items.push({type:'gold',x:cx+TL,y:cy,val:rand(40,80),bob:Math.random()*Math.PI*2});
+}
+function updateArchetypes(dt){
+  if(!G.lv?.rooms)return;
+  G.lv.rooms.forEach(r=>{
+    if(r.crucible){
+      const cr=r.crucible;
+      if(cr.state==='start'){sealRoom(r,cr);spawnCrucibleWave(r,cr);cr.state='active';addShake(8);showMsg('THE ROOM SEALS — SURVIVE!');}
+      else if(cr.state==='active'&&countEnemiesIn(r)===0){
+        if(cr.wave<cr.waves){spawnCrucibleWave(r,cr);showMsg('WAVE '+cr.wave+' / '+cr.waves);}
+        else{unsealRoom(r,cr);cr.state='done';showMsg('THE WAY OPENS!');dropCrucibleReward(r);addShake(6);}
+      }
+    }
+    if(r.inferno&&r.inferno.active){
+      const inf=r.inferno;
+      if(inf.started&&countEnemiesIn(r)===0){inf.active=false;return;}
+      inf.started=true;inf.timer-=dt;
+      if(inf.timer<=0){
+        inf.timer=1.1+Math.random()*0.6;
+        const n=1+(Math.random()<.4?1:0);
+        for(let i=0;i<n;i++){
+          const tx=r.x+1+Math.random()*(r.w-2),ty=r.y+1+Math.random()*(r.h-2);
+          addWarning(tx*TL,ty*TL,{delay:0.8,r:TL*1.25,atk:Math.max(8,6+(G.curLvNum||0)*2),col:'#ff6622',hazardDur:0.6});
+        }
+      }
+    }
+  });
+  // Reanimator necromancer — periodically raises a grunt until it dies
+  G.lv.enemies.forEach(e=>{
+    if(!e._necro||!e.alive)return;
+    e._necroTimer-=dt;
+    if(e._necroTimer<=0){
+      e._necroTimer=3.5;
+      const kids=G.lv.enemies.filter(o=>o.alive&&o._necroChild).length;
+      if(kids<e._necroMax){
+        const g=mkGrunt(G.curRealm,false,e.x+(Math.random()-.5)*TL,e.y+(Math.random()-.5)*TL);
+        g._necroChild=true;g.state='chase';G.lv.enemies.push(g);
+        spawnP(e.x,e.y,'#9b6cff',12);
+      }
+    }
+  });
 }
 
 function updateSpawners(dt){
@@ -6111,7 +6327,7 @@ function mpHandleMessage(d){
         if('familiar' in d)rp.familiar=d.familiar;
         // Rising edge of attacking → process client's melee swing against nearest enemy
         if(d.attacking&&!rp.attacking&&(rp.atkTimer||0)<=0){
-          SFX.atPos(rp.x,rp.y);SFX.swing();
+          SFX.atPos(rp.x,rp.y);SFX.swing(rp.charClass);
           rp.atkTimer=effAtkCd(rp,ATKCD); // enforce cooldown on host to prevent attack spam
           if(G.lv?.enemies&&(rp.playerMode==='level'||rp.playerMode==='boss')){
             const near=findNearest(G.lv.enemies,rp,TL*1.6);
@@ -6142,7 +6358,7 @@ function mpHandleMessage(d){
         }));
         const newCount=d.projs.length;
         const prevCount=ri._lastProjCount||0;
-        if(newCount>prevCount&&rp){SFX.atPos(rp.x,rp.y);SFX.shoot(false);}
+        if(newCount>prevCount&&rp){SFX.atPos(rp.x,rp.y);SFX.shoot(false,rp.charClass);}
         ri._lastProjCount=newCount;
       }
     }
@@ -6392,7 +6608,8 @@ function mpApplyState(data){
     const newRemoteCount=remoteProjs.length;
     if(newRemoteCount>lastCount&&remoteProjs.length){
       const avg=remoteProjs[0];
-      SFX.atPos(avg.x,avg.y);SFX.shoot(false);
+      const _cls=avg._hammer?'dwarf':avg._jesterBomb?'jester':avg._wizard?'wizard':avg._blade?'knight':null;
+      SFX.atPos(avg.x,avg.y);SFX.shoot(false,_cls);
     }
     G._remoteProjCount=newRemoteCount;
   }
@@ -6696,7 +6913,7 @@ function mpApplyState(data){
     rp.turbo=snap.turbo;rp.item=snap.item;
     rp.frozen=snap.fz||0; // show the ice shell on frozen teammates
     if('familiar' in snap)rp.familiar=snap.familiar;
-    if(snap.attacking&&!rp.attacking){SFX.atPos(rp.x,rp.y);SFX.swing();}
+    if(snap.attacking&&!rp.attacking){SFX.atPos(rp.x,rp.y);SFX.swing(rp.charClass);}
     rp.attacking=snap.attacking;rp.atkProg=snap.atkProg;rp.atkAngle=snap.atkAngle;
     rp.playerMode=snap.playerMode||'hub';
   });
@@ -7629,30 +7846,84 @@ const SFX=(()=>{
     g.gain.exponentialRampToValueAtTime(0.001,now+atk+hold+dec);
   }
   function ramp(node,a,b,t,now){now=now??ac().currentTime;node.frequency.setValueAtTime(a,now);node.frequency.exponentialRampToValueAtTime(b,now+t);}
+  // Per-call randomizer — nudges a value ±p so repeated combat sounds aren't carbon copies
+  function vary(v,p){p=p??0.1;return v*(1+(Math.random()*2-1)*p);}
 
-  // Chunky melee hit
+  // Chunky melee hit — pitch/cutoff vary per swing, ~1 in 4 gets a brighter crack
   function hit(heavy=false){
-    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.7;g.connect(dest());
-    const n=noise(.12),f=filt('lowpass',heavy?350:650),ng=c.createGain();
-    env(ng,heavy?.95:.65,0,0,.1,now);n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.13);
-    const o=osc(heavy?45:85),og=c.createGain();env(og,heavy?.7:.45,0,0,.09,now);
-    o.connect(og);og.connect(g);o.start(now);o.stop(now+.12);}catch(e){}
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=vary(.7,.08);g.connect(dest());
+    const n=noise(.12),f=filt('lowpass',vary(heavy?350:650,.22)),ng=c.createGain();
+    env(ng,vary(heavy?.95:.65,.1),0,0,vary(.1,.18),now);n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.14);
+    const o=osc(vary(heavy?45:85,.14)),og=c.createGain();env(og,vary(heavy?.7:.45,.1),0,0,vary(.09,.18),now);
+    o.connect(og);og.connect(g);o.start(now);o.stop(now+.13);
+    if(Math.random()<0.28){const o2=osc(vary(heavy?260:520,.2),'square'),o2g=c.createGain();
+      env(o2g,.18,0,0,.05,now);o2.connect(o2g);o2g.connect(g);o2.start(now);o2.stop(now+.07);}
+    }catch(e){}
   }
-  // Melee swoosh
-  function swing(){
-    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.38;g.connect(dest());
-    const n=noise(.22),f=filt('bandpass',500,2.5),ng=c.createGain();
-    env(ng,.8,.008,0,.19,now);f.frequency.setValueAtTime(180,now);f.frequency.exponentialRampToValueAtTime(2200,now+.14);
-    n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.22);}catch(e){}
-  }
-  // Projectile fire
-  function shoot(fury=false){
-    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.32;g.connect(dest());
-    const o=osc(fury?150:250,'sawtooth'),og=c.createGain();
-    env(og,.7,0,0,.14,now);ramp(o,fury?150:250,fury?900:650,.12,now);
-    o.connect(og);og.connect(g);o.start(now);o.stop(now+.15);
-    const n=noise(.08),f=filt('highpass',1800),ng=c.createGain();env(ng,.25,0,0,.08,now);
+  // Projectile fire — per-class character, pitch/ramp vary per shot
+  function shoot(fury=false,cls){
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.connect(dest());
+    if(cls==='jester'){
+      // Hollow bomb toss — soft thup with a downward pop, not a laser
+      g.gain.value=vary(.34,.1);
+      const f0=vary(420,.1),f1=vary(150,.12);
+      const o=osc(f0,'triangle'),og=c.createGain();
+      env(og,vary(.6,.1),.005,0,vary(.16,.16),now);ramp(o,f0,f1,vary(.13,.14),now);
+      o.connect(og);og.connect(g);o.start(now);o.stop(now+.18);
+      const n=noise(.1),f=filt('lowpass',vary(900,.15)),ng=c.createGain();env(ng,.3,0,0,.1,now);
+      n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.11);
+      return;
+    }
+    if(cls==='dwarf'){
+      // Heavy hammer hurl — low whoosh + metallic ring
+      g.gain.value=vary(.4,.08);
+      const f0=vary(120,.1),f1=vary(300,.12);
+      const o=osc(f0,'sawtooth'),og=c.createGain();
+      env(og,vary(.7,.1),.004,0,vary(.2,.14),now);ramp(o,f0,f1,vary(.16,.14),now);
+      o.connect(og);og.connect(g);o.start(now);o.stop(now+.24);
+      const n=noise(.18),f=filt('bandpass',vary(1400,.15),2),ng=c.createGain();env(ng,.3,.01,0,.16,now);
+      n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.2);
+      return;
+    }
+    if(cls==='knight'){
+      // Whirling thrown blade — metallic ring + airy spin whoosh, all varied per throw
+      g.gain.value=vary(.34,.1);
+      const rf=vary(620,.12);
+      const o=osc(rf,'square'),og=c.createGain();env(og,vary(.4,.1),.003,0,vary(.13,.16),now);
+      ramp(o,rf,vary(rf*1.6,.12),vary(.11,.14),now);
+      o.connect(og);og.connect(g);o.start(now);o.stop(now+.16);
+      const o2=osc(vary(rf*1.5,.1),'sawtooth'),o2g=c.createGain();env(o2g,.22,.003,0,.1,now);
+      o2.connect(o2g);o2g.connect(g);o2.start(now);o2.stop(now+.12);
+      const n=noise(.16),f=filt('bandpass',vary(2600,.18),3),ng=c.createGain();env(ng,vary(.5,.12),.006,0,vary(.13,.15),now);
+      f.frequency.setValueAtTime(vary(1400,.18),now);f.frequency.exponentialRampToValueAtTime(vary(3400,.16),now+.1);
+      n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.17);
+      return;
+    }
+    // Wizard = crystalline arcane bolt (+shimmer); others = the default zap
+    g.gain.value=vary(.32,.1);
+    const wiz=(cls==='wizard');
+    const f0=vary(fury?150:(wiz?320:250),.1),f1=vary(fury?900:(wiz?1500:650),.12);
+    const o=osc(f0,wiz?'triangle':'sawtooth'),og=c.createGain();
+    env(og,vary(.7,.1),0,0,vary(.14,.16),now);ramp(o,f0,f1,vary(.12,.14),now);
+    o.connect(og);og.connect(g);o.start(now);o.stop(now+.16);
+    if(wiz){const o2=osc(vary(f1*1.5,.1),'sine'),o2g=c.createGain();env(o2g,.18,0,0,.1,now);
+      o2.connect(o2g);o2g.connect(g);o2.start(now);o2.stop(now+.12);}
+    const n=noise(.08),f=filt('highpass',vary(1800,.15)),ng=c.createGain();env(ng,.25,0,0,.08,now);
     n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.09);}catch(e){}
+  }
+  // Melee swoosh — knight steel is crisp/bright, dwarf hammer is heavy/low with a body thump
+  function swing(cls){
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.connect(dest());
+    const heavy=(cls==='dwarf');
+    g.gain.value=vary(heavy?.42:.38,.12);
+    const n=noise(.24),f=filt('bandpass',500,heavy?1.6:2.5),ng=c.createGain();
+    env(ng,vary(.8,.1),.008,0,vary(heavy?.24:.19,.15),now);
+    f.frequency.setValueAtTime(vary(heavy?120:180,.18),now);
+    f.frequency.exponentialRampToValueAtTime(vary(heavy?1400:2200,.16),now+vary(heavy?.18:.14,.15));
+    n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.26);
+    if(heavy){const o=osc(vary(90,.12),'sine'),og=c.createGain();env(og,.3,.01,0,.16,now);
+      o.connect(og);og.connect(g);o.start(now);o.stop(now+.18);}
+    }catch(e){}
   }
   // Projectile impact / wall spark
   function impact(){
@@ -7793,11 +8064,21 @@ const SFX=(()=>{
       env(og,.28,0,.02,.32,now+d);o.connect(og);og.connect(g);o.start(now+d);o.stop(now+d+.36);});}catch(e){}
   }
   // Player hurt
-  function playerHurt(){
-    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.58;g.connect(dest());
-    const n=noise(.22),f=filt('bandpass',650,3),ng=c.createGain();env(ng,.92,0,0,.2,now);
-    n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.23);
-    const o=osc(170),og=c.createGain();env(og,.5,0,0,.16,now);ramp(o,170,55,.15,now);
+  function playerHurt(cls){
+    cls=cls||(typeof G!=='undefined'&&G.p?G.p.charClass:null);
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=vary(.58,.08);g.connect(dest());
+    const n=noise(.22),f=filt('bandpass',vary(650,.28),3),ng=c.createGain();env(ng,vary(.92,.08),0,0,vary(.2,.15),now);
+    n.connect(f);f.connect(ng);ng.connect(g);n.start(now);n.stop(now+.24);
+    let base=170; // grunt register per class
+    if(cls==='dwarf')base=120;else if(cls==='wizard')base=210;else if(cls==='jester')base=205;
+    const p0=vary(base,.12);
+    const o=osc(p0),og=c.createGain();env(og,.5,0,0,vary(.16,.15),now);
+    if(cls==='jester'){ // a brief comedic up-then-down yelp
+      o.frequency.setValueAtTime(p0,now);o.frequency.exponentialRampToValueAtTime(p0*1.4,now+.05);
+      o.frequency.exponentialRampToValueAtTime(p0*.6,now+.18);
+    } else {
+      ramp(o,p0,vary(base*.33,.18),.15,now);
+    }
     o.connect(og);og.connect(g);o.start(now);o.stop(now+.2);}catch(e){}
   }
   // Golem stomp warning rumble
@@ -9535,11 +9816,32 @@ function drawSpawners(th){
 
 function drawSwitches(){
   G.lv.switches.forEach(sw=>{
-    const wx=(sw.x+.5)*TL,wy=(sw.y+.5)*TL;
-    if(sw.hit){ctx.fillStyle='#44ff44';ctx.shadowColor='#44ff44';ctx.shadowBlur=10;}
-    else{const f=.6+.4*Math.sin(G.t*3+sw.ph);ctx.fillStyle=`rgba(212,168,83,${f})`;ctx.shadowColor='#d4a853';ctx.shadowBlur=7*f;}
-    ctx.beginPath();ctx.arc(wx,wy,9,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;
+    const wx=(sw.x+.5)*TL,wy=(sw.y+.5)*TL,s=TL*.42;
+    ctx.save();ctx.translate(wx,wy);
+    // Stone plate base — square, so it never reads as a round gold coin
+    ctx.fillStyle='#2c2840';
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-s,-s,s*2,s*2,4);ctx.fill();}else ctx.fillRect(-s,-s,s*2,s*2);
+    ctx.fillStyle='#403a5c';
+    if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-s*.82,-s*.82,s*1.64,s*1.64,3);ctx.fill();}else ctx.fillRect(-s*.82,-s*.82,s*1.64,s*1.64);
+    if(sw.hit){
+      // Pressed — sunk, lit green, with a check
+      ctx.fillStyle='#1c3a22';ctx.beginPath();ctx.arc(0,0,s*.52,0,Math.PI*2);ctx.fill();
+      ctx.shadowColor='#44ff66';ctx.shadowBlur=10;ctx.fillStyle='#44ff66';
+      ctx.beginPath();ctx.arc(0,0,s*.3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      ctx.strokeStyle='#0a2a12';ctx.lineWidth=2;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.beginPath();ctx.moveTo(-s*.18,0);ctx.lineTo(-s*.04,s*.15);ctx.lineTo(s*.2,-s*.16);ctx.stroke();
+    } else {
+      // Unpressed — raised cyan rune button that pulses, with a "step here" arrow
+      const f=.55+.45*Math.sin(G.t*4+sw.ph);
+      ctx.fillStyle='#524a72';ctx.beginPath();ctx.arc(0,0,s*.56,0,Math.PI*2);ctx.fill();
+      ctx.shadowColor='#4ad2ff';ctx.shadowBlur=11*f;
+      ctx.fillStyle=`rgba(74,210,255,${.55+.35*f})`;
+      ctx.beginPath();ctx.arc(0,-s*.04,s*.36,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.fillStyle='#0c2733';
+      ctx.beginPath();ctx.moveTo(0,s*.1);ctx.lineTo(-s*.16,-s*.1);ctx.lineTo(s*.16,-s*.1);ctx.closePath();ctx.fill();
+    }
+    ctx.restore();
   });
 }
 
@@ -10446,6 +10748,20 @@ function drawWizardPlayer(p){
   if(dir==='n'){ctx.save();ctx.translate(-p.x,-p.y);drawStaff();ctx.restore();} // behind body, world coords
 
   ctx.save();ctx.translate(0,bob+float);
+  // Boots peeking under the robe hem — alternate step while walking
+  {
+    const stp=Math.sin(wp)*TL*.07;
+    ctx.shadowBlur=0;ctx.fillStyle=dark;
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(-TL*.15,TL*.34+stp,TL*.13,TL*.13,3);else ctx.rect(-TL*.15,TL*.34+stp,TL*.13,TL*.13);
+    ctx.fill();
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(TL*.02,TL*.34-stp,TL*.13,TL*.13,3);else ctx.rect(TL*.02,TL*.34-stp,TL*.13,TL*.13);
+    ctx.fill();
+    ctx.fillStyle=accent+'55'; // toe highlight
+    ctx.fillRect(-TL*.15,TL*.34+stp,TL*.13,TL*.03);
+    ctx.fillRect( TL*.02,TL*.34-stp,TL*.13,TL*.03);
+  }
   ctx.shadowColor=accent;ctx.shadowBlur=10;
   ctx.fillStyle=primary;
   ctx.beginPath();
@@ -10477,10 +10793,7 @@ function drawWizardPlayer(p){
   ctx.strokeStyle=accent+'88';ctx.lineWidth=1.3;
   ctx.beginPath();ctx.moveTo(0,-TL*.12);ctx.lineTo(-TL*.26,TL*.36);ctx.lineTo(TL*.26,TL*.36);ctx.closePath();ctx.stroke();
 
-  // Arms peeking from robe
-  ctx.fillStyle=dark;
-  ctx.beginPath();ctx.arc(-TL*.2,-TL*.04,TL*.06,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(TL*.22,-TL*.04,TL*.07,0,Math.PI*2);ctx.fill();
+  // (Arms are implied by the robe; the visible hand grips the staff overlay — no floating orbs)
 
   // Head (skin under hat)
   ctx.shadowColor=accent;ctx.shadowBlur=6;
@@ -11507,6 +11820,7 @@ function loop(ts){
           updateSpawners(dt);
           updateEnemies(dt);
           updateHazards(dt);
+          updateArchetypes(dt);
           if(MODE==='boss')updateBoss(dt);
         }
         if(MODE==='boss')updateIceWall(dt); // host advances+damages; client feels the push
