@@ -276,7 +276,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.97';
+const VERSION='1.98';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -6420,7 +6420,8 @@ function mpJoin(){
 function mpSendInput(){
   if(MP.isHost||!MP.enabled)return;
   const now=performance.now();
-  const throttle=G.players.length>2?50:33;
+  // Stay under Ably's 50 msg/sec per-channel rate limit when summed with host's snapshot stream
+  const throttle=G.players.length>=4?85:G.players.length>=3?65:50;
   if(now-(MP._lastInputSend||0)<throttle)return;
   MP._lastInputSend=now;
   mpSend({type:'input',playerId:MP.playerId,
@@ -6505,10 +6506,11 @@ function mpProcessRemoteInputs(dt){
 function mpBroadcastState(){
   if(!MP.isHost||!MP.enabled)return;
   const now=performance.now();
-  // Throttle scales with player count: 2p=33ms, 3p=45ms, 4p=60ms
-  // Game is frozen during shop/pause/death/summary — slow to 500ms keepalive only
+  // Throttle scales with player count to stay under Ably's 50 msg/sec channel cap
+  // (host snapshots + each client's inputs all publish to the same channel)
+  // 2p: 20Hz, 3p: ~17Hz, 4p: ~12Hz. Frozen modes drop to 2Hz keepalive.
   const frozen=MODE==='shop'||MODE==='pause'||MODE==='death'||MODE==='summary';
-  const dyn=frozen?500:(G.players.length>=4?60:G.players.length>=3?45:MP.SYNC_MS);
+  const dyn=frozen?500:(G.players.length>=4?85:G.players.length>=3?60:50);
   if(now-MP.lastSync<dyn)return;
   MP.lastSync=now;
   // Build payload — omit empty optional fields to reduce JSON size
