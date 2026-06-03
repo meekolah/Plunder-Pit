@@ -4,8 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Plunder Pit</title>
+  <meta name="theme-color" content="#1a0f24">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Plunder Pit">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231a0f24'/%3E%3Cpath d='M16 22 L32 14 L48 22 L48 42 L32 50 L16 42 Z' fill='%23c8a030' stroke='%23f5d050' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%231a0f24'/%3E%3Cpath d='M28 30 L32 26 L36 30 L36 36 L32 38 L28 36 Z' fill='%23ff6622'/%3E%3C/svg%3E">
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+  <script>
+    // Offline support: register the service worker on the hosted (https) build.
+    // No-ops silently on file:// or inside sandboxed viewers.
+    if('serviceWorker' in navigator){
+      addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});
+    }
+  </script>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:#06050f;overflow:hidden;touch-action:none;user-select:none;font-family:'IM Fell English',serif}
@@ -51,6 +65,8 @@
     #team-cards{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
     .team-card{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.52);border:1px solid rgba(255,255,255,.07);border-left:3px solid var(--pc,#888);border-radius:6px;padding:5px 8px;font-family:'Cinzel',serif;width:188px;box-sizing:border-box}
     .team-card.dead{opacity:.5;filter:grayscale(.65)}
+    .team-card.low{animation:tclow 1s ease-in-out infinite}
+    @keyframes tclow{0%,100%{box-shadow:0 0 0 0 rgba(220,30,30,0);border-color:rgba(255,255,255,.07)}50%{box-shadow:0 0 11px 1px rgba(225,35,35,.85);border-color:rgba(225,45,45,.8)}}
     .team-card-dot{width:22px;height:22px;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);box-shadow:0 0 5px currentColor;border:1px solid rgba(255,255,255,.18)}
     .team-card-info{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
     .team-card-name{font-size:9px;color:#d4dcd4;letter-spacing:.08em;text-transform:uppercase;display:flex;justify-content:space-between}
@@ -277,7 +293,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='1.99';
+const VERSION='2.51';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -387,7 +403,7 @@ const REALMS=[
 function globalScale(){
   const rp=G.progress?.rp; if(!rp)return 1;
   let n=0; for(const k in rp){ if(rp[k]?.bossDown)n++; }
-  return 1+n*0.13;
+  return 1+n*0.18;
 }
 
 // Realm GIMMICK hook: movement responsiveness. 0 = instant (snappy, normal realms).
@@ -419,7 +435,7 @@ function initGame(){
        keys:0,item:null,itemTimer:0,
        upgrades:{atk:0,maxhp:0,spd:0},
        invuln:0,facing:{x:1,y:0},atkTimer:0,attacking:false,atkProg:0,atkAngle:0,magTimer:0,kills:0},
-    progress:{unlocked:[],rp:{},hubCrystals:[false,false,false,false,false]},
+    progress:{unlocked:['forsaken'],rp:{},hubCrystals:[true,true,true,true,true]},
     cam:{x:0,y:0},
     players:[],      // all active players — populated after p is set
     localIdx:0,      // which index is the local player
@@ -669,7 +685,7 @@ function procInput(dt){
 // ═══════════════════════════════════════
 // HUB WORLD — WALKABLE
 // ═══════════════════════════════════════
-const HW=26,HH=26;
+const HW=32,HH=34;
 const hubMap=(()=>{
   const m=Array.from({length:HH},()=>Array(HW).fill(TFLOOR));
   for(let x=0;x<HW;x++){m[0][x]=TWALL;m[HH-1][x]=TWALL;}
@@ -679,15 +695,16 @@ const hubMap=(()=>{
 const hubTorches=[
   {tx:2,ty:2,ph:0},{tx:HW-3,ty:2,ph:1.5},
   {tx:2,ty:HH-3,ph:3},{tx:HW-3,ty:HH-3,ph:4.5},
-  {tx:10,ty:11,ph:.8},{tx:15,ty:11,ph:2.2}, // flanking the tavern
+  {tx:12,ty:14,ph:.8},{tx:20,ty:14,ph:2.2}, // flanking the tavern
 ];
 // Tower layout: 8 themed doors (positions/numbers fixed; themes shuffled so the order isn't 1:1).
 // Left column (top→down): 1 Boneyard*, 3 Ashlands*, 4 Mirewood, 5 Dreamlands.
 // Right column (top→down): 2 Frostlands, 6 Stronghold*, 7 Skyreach, 8 Sunwastes.   (* = playable)
 // Boneyard stays the entry door; the other two playable realms sit at left-2 and right-2.
-const HSX=TL*13, HSY=TL*12.5;        // Barkeep (centre of the tower)
-const HPSX=TL*13, HPSY=TL*16.5;      // Player start, just below the bar
-const _LX=6,_RX=20,_RY=[4.5,10,15.5,21];
+const HSX=TL*16, HSY=TL*16;          // Barkeep (centre of the tower)
+const HPSX=TL*16, HPSY=TL*19;        // Player start — on the central rug, above the dais carpet & library
+const DAIS_X=TL*16, DAIS_Y=TL*26; const CAT_X=TL*16+44, CAT_Y=TL*30.6+38;    // Champion's Dais — hero-swap focal point in the open bottom
+const _LX=6,_RX=26,_RY=[8,15.3,20.7,28];
 const HUB_DOORS=[
   {n:1,x:_LX,y:_RY[0],name:'Boneyard',  cc:'#a85cdc',realmId:'forsaken',motif:'undead'}, // entry door (stays)
   {n:2,x:_RX,y:_RY[0],name:'Frostlands',cc:'#88d8ff',realmId:'ice',     motif:'ice'},
@@ -697,21 +714,29 @@ const HUB_DOORS=[
   {n:6,x:_RX,y:_RY[1],name:'Stronghold',cc:'#5c78c8',realmId:'castle',  motif:'castle'},
   {n:7,x:_RX,y:_RY[2],name:'Skyreach',  cc:'#56c8b0',comingSoon:true,   motif:'sky'},
   {n:8,x:_RX,y:_RY[3],name:'Sunwastes', cc:'#e0b85a',comingSoon:true,   motif:'desert'},
-  {n:0,x:13, y:2.6,    name:'Trial of Champions',cc:'#ff5544',bossRush:true,     motif:'trial'},
+  {n:0,x:16, y:3,      name:'Trial of Champions',cc:'#ff5544',bossRush:true,     motif:'trial'},
 ].map(d=>({...d,wx:d.x*TL,wy:d.y*TL,realm:REALMS.find(r=>r.id===d.realmId)||null}));
 // 5 one-time golden crystals — a breadcrumb trail leading from the player's start up to
 // the Boneyard door (top-left); collecting all five unlocks that realm.
 const HUB_CRYSTALS=[
-  {x:TL*11.5, y:TL*15},   // nearest the player start
-  {x:TL*10,   y:TL*12.5},
-  {x:TL*8.5,  y:TL*10},
-  {x:TL*7.5,  y:TL*7.5},
-  {x:TL*6.2,  y:TL*5.8},  // right beneath the Forsaken portal
+  {x:TL*13.5, y:TL*19.5},   // nearest the player start
+  {x:TL*11.5, y:TL*17},
+  {x:TL*9.5,  y:TL*14},
+  {x:TL*8,    y:TL*11},
+  {x:TL*6.8,  y:TL*8.6},  // right beneath the Forsaken portal
 ];
 
+// Solid furniture in the hub (world-space rects) — the player can't walk through these.
+const HUB_SOLIDS=[
+  [TL*16-130, TL*30.6-46, TL*16+130, TL*30.6],   // library bookcase (matches the wide shelf below the dais)
+  [0, 0, HW*TL, TL*3.0],                          // tall north wall face — the stained-glass windows are set into it
+];
 function solidHub(wx,wy){
   const r=TL*.28;
-  return[[wx-r,wy-r],[wx+r,wy-r],[wx-r,wy+r],[wx+r,wy+r]].some(([px,py])=>{
+  const cs=[[wx-r,wy-r],[wx+r,wy-r],[wx-r,wy+r],[wx+r,wy+r]];
+  for(let s=0;s<HUB_SOLIDS.length;s++){const o=HUB_SOLIDS[s];
+    if(cs.some(([px,py])=>px>=o[0]&&px<=o[2]&&py>=o[1]&&py<=o[3]))return true;}
+  return cs.some(([px,py])=>{
     const tx=Math.floor(px/TL),ty=Math.floor(py/TL);
     if(tx<0||ty<0||tx>=HW||ty>=HH)return true;
     return hubMap[ty][tx]===TWALL;
@@ -737,25 +762,17 @@ function updateHubWalk(dt){
     if(dist(p,{x:d.wx,y:d.wy})<TL*2.4)G.hubNear={type:'portal',i};
   });
   if(!G.hubNear&&dist(p,{x:HSX,y:HSY})<TL*2.8)G.hubNear={type:'sumner'};
+  if(!G.hubNear&&dist(p,{x:DAIS_X,y:DAIS_Y})<TL*2.0)G.hubNear={type:'dais'};
+  if(!G.hubNear&&dist(p,{x:CAT_X,y:CAT_Y})<TL*2.7)G.hubNear={type:'cat'};
 
-  // Hub crystal collection (golden crystals unlock Boneyard)
-  HUB_CRYSTALS.forEach((c,ci)=>{
-    if(G.progress.hubCrystals[ci])return;
-    if(dist(p,c)<TL*.72){
-      G.progress.hubCrystals[ci]=true;
-      SFX.hubCrystal();
-      spawnP(c.x,c.y,'#f5c542',8);
-      checkUnlocks();
-    }
-  });
-
-  // Weapon attacks in hub — fire on cooldown regardless of interact debounce
+  // Weapon attacks in hub — fire on cooldown, but NOT while standing in an interact zone
+  // (so petting the cat / talking to the barkeep / using a portal doesn't also swing your weapon)
   if(p.atkTimer>0)p.atkTimer-=dt;
-  if(G.inp.atk&&p.atkTimer<=0)fireProj(p);
+  if(G.inp.atk&&p.atkTimer<=0&&!G.hubNear)fireProj(p);
   if(p.attacking){p.atkProg+=dt/ATKDUR;if(p.atkProg>=1){p.attacking=false;p.atkProg=0;}}
 
   // ── SECRET DEV BLOCK — bottom-right corner of hub ──
-  const DEV_X=TL*22.5,DEV_Y=TL*17.5;
+  const DEV_X=TL*28.5,DEV_Y=TL*30.5;
   if(G.inp.atk&&!p._hubPressed&&dist(p,{x:DEV_X,y:DEV_Y})<TL*1.2){
     p._hubPressed=true;
     G.p.gold=9999;
@@ -798,14 +815,35 @@ function updateHubWalk(dt){
         if(MP.enabled&&!MP.isHost){
           showMsg('Waiting for host to start the run…');return;
         }
-        if(prog.bossDown){showMsg(`Re-entering ${realm.name} — farm crystals!`);startLevel(realm,0);return;}
+        if(prog.bossDown){showMsg(`Re-entering ${realm.name}`);startLevel(realm,0);return;}
         if(prog.lvDone>=realm.lvs)startBoss();else startLevel(realm,prog.lvDone);
+      } else if(G.hubNear.type==='dais'){
+        openHeroChange();
+      } else if(G.hubNear.type==='cat'){
+        petCat();
       } else {
         shopAction='hub';openShop('Return to Tower');
       }
     }
   }
   if(!G.inp.atk)p._hubPressed=false;
+}
+
+// Give Lou (the library cat) a fuss — purr, a flurry of hearts, and a happy wiggle (see drawHub).
+function petCat(){
+  G._catPet=G.t; G._catPets=(G._catPets||0)+1;
+  try{SFX.purr();}catch(e){}
+  // a little burst of small hearts popping up off Lou (particles -> world-space, so they sit right on her)
+  for(let i=0;i<7;i++){
+    const lf=1.0+Math.random()*.55;
+    G.parts.push({x:CAT_X+(Math.random()-.5)*16, y:CAT_Y-4-Math.random()*6,
+      vx:(Math.random()-.5)*55, vy:-(95+Math.random()*95),
+      life:lf, ml:lf, sz:3.2+Math.random()*2.0,
+      col:(i%2?'#ff9ec0':'#ff6fa0'), heart:true});
+  }
+  // soft sparkle puff underneath the hearts
+  for(let i=0;i<6;i++){const a=Math.random()*Math.PI*2,s=14+Math.random()*30;
+    G.parts.push({x:CAT_X,y:CAT_Y-3,vx:Math.cos(a)*s,vy:Math.sin(a)*s-10,life:.45,ml:.45,sz:1.8,col:'#ffd6e2'});}
 }
 
 // Small themed emblem floating in each door's void — gives every realm a visual identity.
@@ -869,6 +907,300 @@ function drawDoorMotif(motif,x,y,col,alpha){
   ctx.restore();
 }
 
+// ── THEMED PORTAL ALCOVES — each doorway gets a little diorama of its realm ──
+// Props sit on the floor in front of the portal, offset inward toward the hall, so every
+// section of the tower reads as a threshold to that world (GDL-style themed gates).
+function drawHubAlcove(d){
+  const cc=d.cc;
+  const dirX = d.x < HW/2 ? 1 : (d.x > HW/2 ? -1 : 0);
+  const ax = d.wx + dirX*TL*1.5;
+  const ay = d.wy + (dirX===0 ? TL*1.9 : TL*1.05);
+  ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(ax,ay+12,26,9,0,0,Math.PI*2);ctx.fill();
+  const fa=ctx.createRadialGradient(ax,ay,0,ax,ay,TL*1.6);
+  fa.addColorStop(0,hexA(cc,.10));fa.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=fa;ctx.beginPath();ctx.arc(ax,ay,TL*1.6,0,Math.PI*2);ctx.fill();
+  const key = d.bossRush ? 'trial' : (d.realmId || d.motif);
+  ctx.save();ctx.translate(ax,ay);
+  switch(key){
+    case 'forsaken': {
+      ctx.strokeStyle='#d8cdb8';ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-10,8);ctx.lineTo(10,-2);ctx.moveTo(-10,-2);ctx.lineTo(10,8);ctx.stroke();
+      ctx.fillStyle='#e8ddc8';[[-10,8],[10,-2],[-10,-2],[10,8]].forEach(([bx,by])=>{ctx.beginPath();ctx.arc(bx,by,2.4,0,Math.PI*2);ctx.fill();});
+      ctx.fillStyle='#e8e0d0';ctx.beginPath();ctx.arc(0,-8,7,0,Math.PI*2);ctx.fill();ctx.fillRect(-5,-6,10,6);
+      ctx.fillStyle='#2a2230';ctx.beginPath();ctx.arc(-2.6,-9,2,0,Math.PI*2);ctx.arc(2.6,-9,2,0,Math.PI*2);ctx.fill();ctx.fillRect(-1,-4,2,3);
+      const wf=.6+.4*Math.sin(G.t*3);
+      ctx.fillStyle=hexA(cc,.5*wf);ctx.shadowColor=cc;ctx.shadowBlur=10*wf;
+      ctx.beginPath();ctx.arc(13,-16-Math.sin(G.t*2)*3,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;break;
+    }
+    case 'ice': {
+      ctx.fillStyle=hexA('#cfeeff',.12);ctx.beginPath();ctx.ellipse(0,8,18,7,0,0,Math.PI*2);ctx.fill();
+      const shard=(sx,h,w,col)=>{ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(sx,6);ctx.lineTo(sx-w,6-h*.4);ctx.lineTo(sx,6-h);ctx.lineTo(sx+w,6-h*.4);ctx.closePath();ctx.fill();};
+      shard(0,26,7,'#9fd8f0');shard(-9,17,5,'#bfe8ff');shard(9,19,5,'#bfe8ff');
+      ctx.fillStyle='rgba(255,255,255,.5)';ctx.beginPath();ctx.moveTo(0,6);ctx.lineTo(-2,-12);ctx.lineTo(1,-16);ctx.closePath();ctx.fill();
+      const gf=.6+.4*Math.sin(G.t*2.5);ctx.fillStyle=hexA(cc,.18*gf);ctx.beginPath();ctx.arc(0,-6,TL*.7,0,Math.PI*2);ctx.fill();break;
+    }
+    case 'mountain': {
+      ctx.fillStyle='#2c2c34';ctx.fillRect(-11,-2,22,6);
+      ctx.beginPath();ctx.moveTo(-11,4);ctx.lineTo(11,4);ctx.lineTo(7,9);ctx.lineTo(-7,9);ctx.closePath();ctx.fill();ctx.fillRect(-6,9,12,5);
+      ctx.beginPath();ctx.moveTo(-11,-2);ctx.lineTo(-18,0);ctx.lineTo(-11,2);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#45454e';ctx.fillRect(-11,-2,22,2);
+      const ef=.6+.4*Math.sin(G.t*5);
+      const g2=ctx.createRadialGradient(14,8,0,14,8,TL*1.1);g2.addColorStop(0,`rgba(255,130,40,${.4*ef})`);g2.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=g2;ctx.beginPath();ctx.arc(14,8,TL*1.1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=`rgba(255,150,50,${ef})`;[[11,9],[16,8],[14,11]].forEach(([cx,cy])=>{ctx.beginPath();ctx.arc(cx,cy,2,0,Math.PI*2);ctx.fill();});break;
+    }
+    case 'castle': {
+      ctx.strokeStyle='#6a5230';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(0,12);ctx.lineTo(0,-26);ctx.stroke();
+      ctx.fillStyle='#caa15a';ctx.beginPath();ctx.arc(0,-26,3,0,Math.PI*2);ctx.fill();
+      const wav=Math.sin(G.t*1.6)*1.5;
+      ctx.fillStyle=cc;ctx.beginPath();ctx.moveTo(0,-23);ctx.lineTo(16+wav,-21);ctx.lineTo(14+wav,-6);ctx.lineTo(0,-8);ctx.closePath();ctx.fill();
+      ctx.fillStyle=hexA('#ffffff',.18);ctx.beginPath();ctx.moveTo(0,-23);ctx.lineTo(8,-22);ctx.lineTo(7,-8);ctx.lineTo(0,-8);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(255,235,180,.7)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(4,-18);ctx.lineTo(9,-15);ctx.lineTo(4,-12);ctx.stroke();
+      ctx.fillStyle='#3a4a6a';ctx.beginPath();ctx.moveTo(-13,4);ctx.lineTo(-5,4);ctx.lineTo(-5,11);ctx.lineTo(-9,15);ctx.lineTo(-13,11);ctx.closePath();ctx.fill();
+      ctx.strokeStyle=hexA(cc,.8);ctx.lineWidth=1.2;ctx.stroke();break;
+    }
+    case 'forest': {
+      ctx.fillStyle='#4a3422';ctx.beginPath();ctx.ellipse(0,8,11,5,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#5a4028';ctx.fillRect(-10,-2,20,10);
+      ctx.fillStyle='#3a6a3a';ctx.beginPath();ctx.ellipse(0,-2,11,4,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a4a30';ctx.beginPath();ctx.arc(0,-2,4,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#4a8a4a';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(8,8);ctx.lineTo(11,-6);ctx.stroke();
+      ctx.fillStyle='#4a8a4a';ctx.beginPath();ctx.ellipse(13,-7,3,5,0.6,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(8,-4,3,5,-0.6,0,Math.PI*2);ctx.fill();break;
+    }
+    case 'dream': {
+      for(let i=0;i<3;i++){const a=G.t*1.4+i*2.1,wx=Math.cos(a)*9,wy=-6+Math.sin(a)*6-i*3;
+        ctx.fillStyle=hexA(cc,.4);ctx.shadowColor=cc;ctx.shadowBlur=10;ctx.beginPath();ctx.arc(wx,wy,3.5-i*.6,0,Math.PI*2);ctx.fill();}
+      ctx.shadowBlur=0;
+      [[-8,-2],[10,-10],[3,4]].forEach(([sx,sy],i)=>{const tw=.5+.5*Math.sin(G.t*4+i*2);ctx.globalAlpha=tw;ctx.fillStyle='rgba(255,255,255,.8)';ctx.fillRect(sx-1,sy,2,2);ctx.fillRect(sx,sy-1,1,4);ctx.fillRect(sx-1.5,sy+.5,4,1);});
+      ctx.globalAlpha=1;break;
+    }
+    case 'sky': {
+      ctx.fillStyle=hexA('#dff4ff',.6);ctx.beginPath();ctx.arc(-5,-2,6,0,Math.PI*2);ctx.arc(3,-4,7,0,Math.PI*2);ctx.arc(10,-1,5,0,Math.PI*2);ctx.fill();ctx.fillRect(-9,-1,22,5);
+      ctx.save();ctx.translate(12,8);ctx.rotate(.5);
+      ctx.fillStyle=hexA(cc,.8);ctx.beginPath();ctx.ellipse(0,0,3,10,0,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(0,9);ctx.stroke();ctx.restore();break;
+    }
+    case 'desert': {
+      ctx.fillStyle=hexA('#e0b85a',.35);ctx.beginPath();ctx.moveTo(-16,10);ctx.quadraticCurveTo(-4,-2,6,8);ctx.quadraticCurveTo(12,12,16,10);ctx.closePath();ctx.fill();
+      ctx.fillStyle=hexA('#d0a84a',.5);ctx.beginPath();ctx.moveTo(0,10);ctx.quadraticCurveTo(8,2,16,10);ctx.closePath();ctx.fill();
+      const sf=.6+.4*Math.sin(G.t*2);
+      ctx.fillStyle=hexA(cc,.6);ctx.shadowColor=cc;ctx.shadowBlur=12*sf;ctx.beginPath();ctx.arc(2,-12,5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      ctx.strokeStyle=hexA(cc,.4);ctx.lineWidth=1;for(let i=0;i<8;i++){const a=i/8*Math.PI*2;ctx.beginPath();ctx.moveTo(2+Math.cos(a)*7,-12+Math.sin(a)*7);ctx.lineTo(2+Math.cos(a)*9,-12+Math.sin(a)*9);ctx.stroke();}break;
+    }
+    case 'trial': {
+      ctx.strokeStyle='#c8ccd8';ctx.lineWidth=2.5;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-12,12);ctx.lineTo(8,-16);ctx.moveTo(12,12);ctx.lineTo(-8,-16);ctx.stroke();
+      ctx.strokeStyle='#caa15a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-15,16);ctx.lineTo(-9,8);ctx.moveTo(15,16);ctx.lineTo(9,8);ctx.stroke();
+      ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-16,11);ctx.lineTo(-10,13);ctx.moveTo(16,11);ctx.lineTo(10,13);ctx.stroke();
+      const tf=.6+.4*Math.sin(G.t*4);
+      ctx.fillStyle=hexA(cc,.7*tf);ctx.shadowColor=cc;ctx.shadowBlur=8*tf;
+      ctx.beginPath();ctx.arc(8,-16,2.5,0,Math.PI*2);ctx.arc(-8,-16,2.5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;break;
+    }
+  }
+  ctx.lineCap='butt';ctx.restore();
+}
+
+// Heraldic banner that hangs above each gate — realm colour + glyph, gently waving.
+function drawHubBanner(d){
+  const rodY=Math.max(d.wy-TL*2.35, TL*1.15), x=d.wx, len=TL*1.35, w=TL*.82;
+  const wav=Math.sin(G.t*1.5+d.x*.3)*1.6;
+  ctx.save();ctx.translate(x,rodY);
+  ctx.fillStyle='#3a2e1c';ctx.fillRect(-w/2-4,-3,w+8,4);
+  ctx.fillStyle='#caa15a';ctx.beginPath();ctx.arc(-w/2-4,-1,2.5,0,Math.PI*2);ctx.arc(w/2+4,-1,2.5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=hexA(d.cc,.9);
+  ctx.beginPath();ctx.moveTo(-w/2,0);ctx.lineTo(w/2,0);ctx.lineTo(w/2+wav,len*.78);ctx.lineTo(0,len);ctx.lineTo(-w/2+wav,len*.78);ctx.closePath();ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.28)';
+  ctx.beginPath();ctx.moveTo(-w/2+5,5);ctx.lineTo(w/2-5,5);ctx.lineTo(w/2-5+wav,len*.72);ctx.lineTo(0,len*.86);ctx.lineTo(-w/2+5+wav,len*.72);ctx.closePath();ctx.fill();
+  ctx.strokeStyle=hexA('#e8c878',.5);ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(-w/2,0);ctx.lineTo(-w/2+wav,len*.78);ctx.lineTo(0,len);ctx.lineTo(w/2+wav,len*.78);ctx.lineTo(w/2,0);ctx.stroke();
+  ctx.save();ctx.translate(wav*.5,len*.42);ctx.scale(.62,.62);drawDoorMotif(d.motif,0,0,'#f3e4c0',.92);ctx.restore();
+  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(-w/2,0,w,3);
+  ctx.restore();
+}
+
+// A fireside lounge built into the left wall — animated hearth, armchairs, side table, a sleeping cat.
+function drawFireside(fx,fy,dir){
+  dir=dir||1;
+  ctx.save();ctx.translate(fx,fy);ctx.scale(dir,1);   // dir<0 mirrors the whole lounge for the opposite wall
+  const lf=.85+.15*Math.sin(G.t*6);
+  const lg=ctx.createRadialGradient(14,0,0,14,0,TL*3.6);
+  lg.addColorStop(0,`rgba(255,150,60,${.22*lf})`);lg.addColorStop(.5,`rgba(255,110,40,${.08*lf})`);lg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=lg;ctx.beginPath();ctx.arc(14,0,TL*3.6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(90,40,40,.5)';ctx.beginPath();ctx.ellipse(36,8,42,20,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(200,150,90,.35)';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(36,8,36,16,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#2a2620';ctx.fillRect(-18,-30,30,60);
+  ctx.fillStyle='#3a342a';ctx.fillRect(-18,-30,30,8);ctx.fillRect(-18,22,30,8);ctx.fillRect(-18,-30,8,60);ctx.fillRect(4,-30,8,60);
+  ctx.fillStyle='#5a4630';ctx.fillRect(-20,-34,36,5);ctx.fillStyle='#6e5638';ctx.fillRect(-20,-34,36,1.5);
+  ctx.fillStyle='#0c0805';ctx.fillRect(-10,-22,14,44);
+  ctx.save();ctx.translate(-3,16);ctx.rotate(.2);ctx.fillStyle='#4a3420';ctx.fillRect(-9,-3,18,5);ctx.restore();
+  ctx.save();ctx.translate(-3,12);ctx.rotate(-.15);ctx.fillStyle='#3a2818';ctx.fillRect(-9,-3,18,5);ctx.restore();
+  const flame=(cx,base,h,wd,col)=>{const f=.8+.2*Math.sin(G.t*9+cx);ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(cx-wd,base);ctx.quadraticCurveTo(cx-wd*.5,base-h*.6*f,cx+Math.sin(G.t*7+cx)*2,base-h*f);ctx.quadraticCurveTo(cx+wd*.5,base-h*.6*f,cx+wd,base);ctx.closePath();ctx.fill();};
+  flame(-3,16,34,9,'rgba(210,70,20,.9)');flame(-5,16,24,6,'rgba(255,140,40,.92)');flame(-1,16,26,6,'rgba(255,150,45,.92)');flame(-3,16,16,4,'rgba(255,225,130,.95)');
+  for(let i=0;i<5;i++){const t=((G.t*0.5+i*0.2)%1),ey=16-t*42,ex=-3+Math.sin(G.t*3+i)*5,a=(1-t)*.7;ctx.fillStyle=`rgba(255,170,70,${a})`;ctx.beginPath();ctx.arc(ex,ey,1.4,0,Math.PI*2);ctx.fill();}
+  ctx.fillStyle='#7a3030';ctx.fillRect(-16,-40,4,6);ctx.fillStyle='#3a5a7a';ctx.fillRect(-11,-39,4,5);
+  const mcf=.7+.3*Math.sin(G.t*7+2);ctx.fillStyle='#e8e0c0';ctx.fillRect(8,-41,2,7);ctx.fillStyle=`rgba(255,190,90,${mcf})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=6;ctx.beginPath();ctx.arc(9,-43,1.8*mcf,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+  const chair=(cx,cy)=>{
+    ctx.save();ctx.translate(cx,cy);
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(0,13,15,5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5a2e2e';ctx.fillRect(-10,-16,5,28);ctx.fillRect(-10,-2,18,12);
+    ctx.fillStyle='#6a3636';ctx.fillRect(-11,-6,4,16);ctx.fillRect(6,-4,4,14);
+    ctx.fillStyle='rgba(255,180,120,.12)';ctx.fillRect(-6,-1,13,3);
+    ctx.fillStyle='#3a2614';ctx.fillRect(-9,9,3,6);ctx.fillRect(5,9,3,6);
+    ctx.restore();
+  };
+  chair(TL*1.7,-TL*.2);chair(TL*1.6,TL*1.15);
+  ctx.save();ctx.translate(TL*2.8,TL*.45);
+  ctx.fillStyle='rgba(0,0,0,.26)';ctx.beginPath();ctx.ellipse(0,10,12,4,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#5a3b22';ctx.beginPath();ctx.ellipse(0,0,11,5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#3a2614';ctx.fillRect(-2,4,4,8);
+  ctx.fillStyle='#caa15a';ctx.fillRect(-4,-6,5,7);ctx.fillStyle='#f5f0e0';ctx.beginPath();ctx.arc(-1.5,-6,2,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  // a small stack of books by the hearth (keeps the reading-nook feel on both sides)
+  ctx.fillStyle='#3a6a3a';ctx.fillRect(TL*.5,TL*1.0,16,5);ctx.fillStyle='#7a3030';ctx.fillRect(TL*.55,TL*1.0-5,14,5);ctx.fillStyle='#3a5a7a';ctx.fillRect(TL*.5,TL*1.0-10,12,5);
+  // (fireside cats removed — Lou in the library is the only cat now)
+  ctx.restore();
+}
+
+// The Champion's Dais — a raised platform in the open bottom of the hall. Stand on it and
+// interact to change your hero/class; the rim medallions light up as you fell each realm boss.
+// A stained-glass lancet window set into a side wall — leaded jewel panes, a pointed-arch
+// stone frame, a soft backlight, and colored light pooling on the floor in front.
+// dir=+1 : left wall (light pools to the right); dir=-1 : right wall (pools left).
+// A tall stone back (north) wall face, so the stained-glass windows read in proportion to the wall.
+function drawNorthWall(){
+  const W=HW*TL, wh=TL*3.0;
+  const g=ctx.createLinearGradient(0,0,0,wh);
+  g.addColorStop(0,'#1d170f'); g.addColorStop(0.45,'#161109'); g.addColorStop(1,'#100b06');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,wh);
+  // warm lit cap along the very top
+  ctx.fillStyle='#332916'; ctx.fillRect(0,0,W,5);
+  ctx.fillStyle='rgba(255,222,160,0.07)'; ctx.fillRect(0,5,W,1.5);
+  // masonry — horizontal courses with offset vertical joints
+  const ch=TL*0.95; ctx.lineWidth=1;
+  for(let y=ch; y<wh; y+=ch){
+    ctx.strokeStyle='rgba(0,0,0,0.20)'; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    ctx.strokeStyle='rgba(255,228,176,0.022)'; ctx.beginPath(); ctx.moveTo(0,y+1.5); ctx.lineTo(W,y+1.5); ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(0,0,0,0.15)';
+  for(let ci=0; ci*ch<wh; ci++){ const y0=ci*ch, y1=Math.min(wh,(ci+1)*ch), off=(ci%2)*TL*1.1;
+    for(let x=off; x<=W; x+=TL*2.2){ ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke(); } }
+  // base trim + soft shadow cast onto the floor
+  ctx.fillStyle='#2b2317'; ctx.fillRect(0,wh-5,W,5);
+  ctx.fillStyle='rgba(255,222,160,0.05)'; ctx.fillRect(0,wh-5,W,1.5);
+  const sh=ctx.createLinearGradient(0,wh,0,wh+TL*0.8);
+  sh.addColorStop(0,'rgba(0,0,0,0.42)'); sh.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sh; ctx.fillRect(0,wh,W,TL*0.8);
+}
+function drawStainedWindow(wx,wy,seed){
+  seed=seed||0;
+  const WW=36, WH=88, archH=27;
+  const halfW=WW/2, top=-WH/2, shoulder=top+archH, bot=WH/2;
+  const flick=0.82+0.18*Math.sin(G.t*1.1+seed*1.7);
+  const pal=['#2f4fa6','#a82c2c','#caa028','#2f8050','#6a2f9c'];   // blue, ruby, amber, emerald, violet
+  const col=i=>pal[(i+seed)%pal.length];
+  const lancet=(m)=>{
+    m=m||0;
+    const hw=halfW-m, t=top+m, sh=shoulder+m, bt=bot-m, RR=Math.sqrt(archH*archH+hw*hw), N=16;
+    ctx.beginPath();
+    ctx.moveTo(-hw,bt); ctx.lineTo(-hw,sh);
+    for(let i=0;i<=N;i++){const x=-hw+hw*(i/N); const y=sh-Math.sqrt(Math.max(0,RR*RR-(x-hw)*(x-hw))); ctx.lineTo(x,y);}
+    for(let i=0;i<=N;i++){const x=hw*(i/N);     const y=sh-Math.sqrt(Math.max(0,RR*RR-(x+hw)*(x+hw))); ctx.lineTo(x,y);}
+    ctx.lineTo(hw,bt); ctx.closePath();
+  };
+  const gm=6;   // stone surround width
+
+  ctx.save(); ctx.translate(wx,wy);
+
+  // ---- soft light pooling on the floor below the window ----
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=flick;
+  const pg=ctx.createRadialGradient(0,bot+32,2,0,bot+32,72);
+  pg.addColorStop(0,'rgba(255,220,140,0.14)'); pg.addColorStop(0.5,'rgba(170,130,210,0.07)'); pg.addColorStop(1,'rgba(80,120,200,0)');
+  ctx.fillStyle=pg; ctx.beginPath(); ctx.ellipse(0,bot+32,48,24,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // ---- soft shadow seating the window into the wall ----
+  lancet(-4); ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fill();
+
+  // ---- stone surround (frame) — a touch lighter at the bottom where room light catches it ----
+  ctx.save(); lancet(0); ctx.clip();
+  const rg=ctx.createLinearGradient(0,top,0,bot);
+  rg.addColorStop(0,'#352e22'); rg.addColorStop(0.5,'#473e2d'); rg.addColorStop(1,'#5e533e');
+  ctx.fillStyle=rg; ctx.fillRect(-halfW-2,top-2,WW+4,WH+4);
+  ctx.restore();
+
+  // ---- leaded glass ----
+  ctx.save(); lancet(gm); ctx.clip();
+  ctx.fillStyle='#14110c'; ctx.fillRect(-halfW-2,top-2,WW+4,WH+4);
+  const ag=ctx.createLinearGradient(0,top,0,shoulder); ag.addColorStop(0,'#cdbf8e'); ag.addColorStop(1,col(0));
+  ctx.fillStyle=ag; ctx.fillRect(-halfW,top,WW,archH+1);
+  const rows=4, rh=(bot-shoulder)/rows;
+  for(let r=0;r<rows;r++){ const y0=shoulder+r*rh;
+    [[-halfW,0],[0,halfW]].forEach((cc,ci)=>{
+      ctx.fillStyle=col(r+ci); ctx.fillRect(cc[0]+1.2,y0+1.2,(cc[1]-cc[0])-2.4,rh-2.4);
+      const shd=ctx.createLinearGradient(cc[0],y0,cc[0],y0+rh); shd.addColorStop(0,'rgba(255,255,255,0.12)'); shd.addColorStop(1,'rgba(0,0,0,0.20)');
+      ctx.fillStyle=shd; ctx.fillRect(cc[0]+1.2,y0+1.2,(cc[1]-cc[0])-2.4,rh-2.4);
+    });
+  }
+  ctx.strokeStyle='#14110c'; ctx.lineWidth=2;
+  for(let r=0;r<=rows;r++){ const y0=shoulder+r*rh; ctx.beginPath(); ctx.moveTo(-halfW,y0); ctx.lineTo(halfW,y0); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(0,shoulder); ctx.lineTo(0,bot); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-halfW,shoulder); ctx.lineTo(0,top); ctx.lineTo(halfW,shoulder); ctx.stroke();
+  const my=(shoulder+bot)/2;
+  ctx.fillStyle='#14110c'; ctx.beginPath(); ctx.arc(0,my,11,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#e8e0c0'; ctx.beginPath(); ctx.arc(0,my,9.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=col(3);    ctx.beginPath(); ctx.arc(0,my,6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(-2,my-2,2,0,Math.PI*2); ctx.fill();
+  // gentle backlight through the glass + a sheen streak
+  ctx.globalCompositeOperation='lighter';
+  const ibg=ctx.createRadialGradient(0,-6,2,0,-6,WH*0.55); ibg.addColorStop(0,'rgba(255,236,184,'+(0.20*flick)+')'); ibg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=ibg; ctx.fillRect(-halfW,top,WW,WH);
+  ctx.fillStyle='rgba(255,255,255,0.06)';
+  ctx.beginPath(); ctx.moveTo(-halfW,shoulder+6); ctx.lineTo(-halfW+10,shoulder+2); ctx.lineTo(halfW*0.25,bot-6); ctx.lineTo(halfW*0.25-10,bot-2); ctx.closePath(); ctx.fill();
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+
+  // ---- stone frame edge + lit sill ----
+  lancet(0); ctx.lineWidth=2.5; ctx.strokeStyle='#2a2418'; ctx.stroke();
+  ctx.lineWidth=1.2; ctx.strokeStyle='rgba(150,134,100,0.5)'; ctx.stroke();
+  ctx.fillStyle='#5e533e'; ctx.fillRect(-halfW-2,bot-2,WW+4,5);
+  ctx.fillStyle='rgba(220,200,160,0.45)'; ctx.fillRect(-halfW-2,bot-2,WW+4,1.5);
+
+  ctx.restore();
+}
+function drawChampionDais(cx,cy,near){
+  ctx.save();ctx.translate(cx,cy);
+  ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(0,12,TL*2.2,TL*1.0,0,0,Math.PI*2);ctx.fill();
+  const gf=near?1:.6, gg=ctx.createRadialGradient(0,-6,0,0,-6,TL*2.7);
+  gg.addColorStop(0,`rgba(255,190,90,${.15*gf})`);gg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gg;ctx.beginPath();ctx.arc(0,-6,TL*2.7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#2c2620';ctx.beginPath();ctx.ellipse(0,0,TL*2.0,TL*0.95,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#3a342a';ctx.lineWidth=3;ctx.stroke();
+  ctx.fillStyle='#352e24';ctx.beginPath();ctx.ellipse(0,-4,TL*1.5,TL*0.72,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#403726';ctx.beginPath();ctx.ellipse(0,-8,TL*1.12,TL*0.54,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=near?'rgba(226,182,110,.7)':'rgba(206,161,90,.4)';ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(0,-8,TL*1.12,TL*0.54,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(255,225,160,.05)';ctx.beginPath();ctx.ellipse(0,-10,TL*1.12,TL*0.54,0,0,Math.PI*2);ctx.fill();
+  // realm trophy medallions arc across the player-facing rim — lit as each boss falls
+  const rd=HUB_DOORS.filter(d=>d.realm&&!d.comingSoon).sort((a,b)=>a.realm.order-b.realm.order);
+  rd.forEach((d,i)=>{
+    const a=Math.PI*1.5+(i-(rd.length-1)/2)*0.62, mx=Math.cos(a)*TL*1.42, my=-8+Math.sin(a)*TL*0.7;
+    const cleared=G.progress.rp[d.realm.id]?.bossDown;
+    ctx.fillStyle=cleared?hexA(d.cc,.9):'rgba(28,24,18,.85)';ctx.beginPath();ctx.arc(mx,my,8,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=cleared?hexA(d.cc,.95):'rgba(85,74,58,.6)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(mx,my,8,0,Math.PI*2);ctx.stroke();
+    if(cleared){ctx.shadowColor=d.cc;ctx.shadowBlur=7;ctx.save();ctx.translate(mx,my);ctx.scale(.42,.42);drawDoorMotif(d.motif,0,0,'#ffffff',.95);ctx.restore();ctx.shadowBlur=0;}
+    else{ctx.fillStyle='rgba(120,110,90,.55)';ctx.font='bold 9px Cinzel,serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('?',mx,my);}
+  });
+  // central champion sigil — pedestal + floating crossed swords
+  ctx.fillStyle='#4a3f2c';ctx.beginPath();ctx.ellipse(0,-9,TL*.46,TL*.22,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#5a4d34';ctx.fillRect(-TL*.28,-TL*.66,TL*.56,TL*.58);
+  ctx.fillStyle='rgba(0,0,0,.25)';ctx.fillRect(-TL*.28,-TL*.2,TL*.56,TL*.12);
+  const bob=Math.sin(G.t*2)*2;
+  ctx.save();ctx.translate(0,-TL*1.05+bob);
+  ctx.strokeStyle='#f3e4c0';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.shadowColor='#ffd27a';ctx.shadowBlur=near?13:7;
+  ctx.beginPath();ctx.moveTo(-8,8);ctx.lineTo(8,-8);ctx.moveTo(8,8);ctx.lineTo(-8,-8);ctx.stroke();
+  ctx.strokeStyle='#caa15a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-10,11);ctx.lineTo(-6,7);ctx.moveTo(10,11);ctx.lineTo(6,7);ctx.stroke();
+  ctx.shadowBlur=0;ctx.lineCap='butt';ctx.restore();
+  ctx.restore();
+}
+
 function drawHub(){
   // Hard-reset all canvas state — prevents transform accumulation from causing ghost circles
   ctx.setTransform(1,0,0,1,0,0);
@@ -896,17 +1228,86 @@ function drawHub(){
   // Hub tiles
   const cl=Math.floor(G.cam.x/TL)-1,ct=Math.floor(G.cam.y/TL)-1;
   const cr=Math.ceil((G.cam.x+cv.width)/TL)+1,cb=Math.ceil((G.cam.y+cv.height)/TL)+1;
+  // Warm flagstone floor + stone walls with depth — a cozy hall rather than a flat grid
   for(let ty=Math.max(0,ct);ty<Math.min(HH,cb);ty++){
     for(let tx=Math.max(0,cl);tx<Math.min(HW,cr);tx++){
       const t=hubMap[ty][tx],wx=tx*TL,wy=ty*TL;
       if(t===TWALL){
-        ctx.fillStyle='#0e0b1c';ctx.fillRect(wx,wy,TL,TL);
-        ctx.fillStyle='#1a1530';ctx.fillRect(wx,wy,TL,5);
+        ctx.fillStyle='#14110b';ctx.fillRect(wx,wy,TL,TL);
+        const mh=((tx*131+ty*197)>>>0)%6;
+        if(mh===0){ctx.fillStyle='rgba(255,228,176,.024)';ctx.fillRect(wx,wy,TL,TL);}
+        else if(mh===3){ctx.fillStyle='rgba(0,0,0,.10)';ctx.fillRect(wx,wy,TL,TL);}
+        ctx.fillStyle='#30271a';ctx.fillRect(wx,wy,TL,5);                                  // warm lit cap
+        ctx.fillStyle='rgba(255,222,160,.06)';ctx.fillRect(wx,wy+5,TL,1.5);
+        if(hubMap[ty+1]&&hubMap[ty+1][tx]===TFLOOR){                                       // south-face shadow (height)
+          ctx.fillStyle='rgba(0,0,0,.32)';ctx.fillRect(wx,wy+TL-6,TL,6);
+          ctx.fillStyle='rgba(0,0,0,.15)';ctx.fillRect(wx,wy+TL-10,TL,4);
+        }
       } else {
-        ctx.fillStyle=(tx+ty)%2===0?'#131020':'#110e1e';ctx.fillRect(wx,wy,TL,TL);
+        ctx.fillStyle=(tx+ty)%2===0?'#272019':'#221b14';ctx.fillRect(wx,wy,TL,TL);
+        const h=((tx*928371+ty*689287)>>>0), m=h%7;
+        if(m===0){ctx.fillStyle='rgba(255,234,188,.02)';ctx.fillRect(wx,wy,TL,TL);}
+        else if(m===1){ctx.fillStyle='rgba(0,0,0,.05)';ctx.fillRect(wx,wy,TL,TL);}
+        ctx.fillStyle='rgba(0,0,0,.12)';ctx.fillRect(wx,wy,TL,1);ctx.fillRect(wx,wy,1,TL);  // flagstone seams
+        ctx.fillStyle='rgba(255,228,176,.02)';ctx.fillRect(wx,wy+TL-1,TL,1);
+        if(hubMap[ty-1]&&hubMap[ty-1][tx]===TWALL){ctx.fillStyle='rgba(0,0,0,.22)';ctx.fillRect(wx,wy,TL,4);ctx.fillStyle='rgba(0,0,0,.11)';ctx.fillRect(wx,wy,TL,9);}
+        if(hubMap[ty]&&hubMap[ty][tx-1]===TWALL){ctx.fillStyle='rgba(0,0,0,.16)';ctx.fillRect(wx,wy,3,TL);}
+        if(hubMap[ty]&&hubMap[ty][tx+1]===TWALL){ctx.fillStyle='rgba(0,0,0,.10)';ctx.fillRect(wx+TL-4,wy,4,TL);}
       }
     }
   }
+  // Cozy hearth wash over the whole hall + a soft edge vignette so warmth pools at the centre
+  const _hw=ctx.createRadialGradient(HSX,HSY,TL*2,HSX,HSY,TL*16);
+  _hw.addColorStop(0,'rgba(255,150,60,.10)');_hw.addColorStop(.5,'rgba(255,120,50,.04)');_hw.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=_hw;ctx.fillRect(0,0,HW*TL,HH*TL);
+  const _vg=ctx.createRadialGradient(HSX,HSY,TL*10,HSX,HSY,TL*21);
+  _vg.addColorStop(0,'rgba(0,0,0,0)');_vg.addColorStop(1,'rgba(0,0,0,.42)');
+  ctx.fillStyle=_vg;ctx.fillRect(0,0,HW*TL,HH*TL);
+
+  // ── Central woven rug — anchors the social heart of the hall ──
+  ctx.save();ctx.translate(HSX,HSY+TL*2.0);
+  const rugR=TL*2.9;
+  ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(0,5,rugR*1.04,rugR*.74,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#6e2420';ctx.beginPath();ctx.ellipse(0,0,rugR,rugR*.7,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#7e2c26';ctx.beginPath();ctx.ellipse(0,0,rugR*.92,rugR*.7*.92,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(206,161,90,.6)';ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.ellipse(0,0,rugR*.86,rugR*.7*.86,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(0,0,rugR*.5,rugR*.7*.5,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(40,12,10,.5)';ctx.beginPath();ctx.ellipse(0,0,rugR*.42,rugR*.7*.42,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(226,182,110,.5)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,-rugR*.26);ctx.lineTo(rugR*.2,0);ctx.lineTo(0,rugR*.26);ctx.lineTo(-rugR*.2,0);ctx.closePath();ctx.stroke();
+  ctx.strokeStyle='rgba(206,170,100,.45)';ctx.lineWidth=1.5;
+  for(let a=0;a<Math.PI*2;a+=Math.PI/22){const ex=Math.cos(a)*rugR,ey=Math.sin(a)*rugR*.7;ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex*1.07,ey*1.07);ctx.stroke();}
+  ctx.restore();
+
+  // ── WAYFINDING — colored stone runners from the hub to every gate. Guide-lights flow
+  // OUTWARD toward each door, and a small realm glyph marks each trailhead, so from the
+  // centre you can read at a glance which direction (and which realm) every path leads to. ──
+  const PCX=HSX, PCY=HSY+TL*2;            // converge on the central rug, beside the spawn
+  HUB_DOORS.forEach(d=>{
+    const dx=d.wx-PCX, dy=d.wy-PCY, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
+    const s0=TL*3.3, s1=len-TL*1.4;       // start just outside the rug, stop before the portal
+    if(s1<=s0)return;
+    const ax=PCX+ux*s0, ay=PCY+uy*s0, span=s1-s0;
+    const bx=PCX+ux*s1, by=PCY+uy*s1;
+    ctx.lineCap='round';
+    ctx.strokeStyle='rgba(58,46,32,.5)';ctx.lineWidth=TL*.72;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.strokeStyle='rgba(96,76,48,.5)';ctx.lineWidth=TL*.72-5;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.strokeStyle=hexA(d.cc,.5);ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    // guide-lights traveling outward toward the gate
+    const n=Math.max(2,Math.floor(span/TL/1.5));
+    for(let i=0;i<n;i++){
+      const t=((G.t*0.32 + i/n)%1), px=ax+ux*span*t, py=ay+uy*span*t, a=Math.sin(t*Math.PI)*.85;
+      ctx.fillStyle=hexA(d.cc,a);ctx.shadowColor=d.cc;ctx.shadowBlur=6;
+      ctx.beginPath();ctx.arc(px,py,2.4,0,Math.PI*2);ctx.fill();
+    }
+    ctx.shadowBlur=0;
+    // trailhead node: dark disc + colored ring + the realm's glyph
+    ctx.fillStyle='rgba(18,13,8,.82)';ctx.beginPath();ctx.arc(ax,ay,11,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=hexA(d.cc,.75);ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(ax,ay,11,0,Math.PI*2);ctx.stroke();
+    ctx.save();ctx.translate(ax,ay);ctx.scale(.6,.6);drawDoorMotif(d.motif,0,0,d.cc,.95);ctx.restore();
+  });
+  ctx.lineCap='butt';
 
   // ── REALM ZONE ATMOSPHERE ──
   // Each door's surrounding floor is tinted with its realm theme colour, creating
@@ -947,6 +1348,195 @@ function drawHub(){
     ctx.beginPath();ctx.arc(wx,wy-7,4.5*f,0,Math.PI*2);ctx.fill();
     ctx.shadowBlur=0;
   });
+
+  // ── COZY FURNISHINGS — warm lanterns + lived-in clutter around the hall ──
+  const lantern=(lx,ly,ph)=>{
+    const f=.8+.2*Math.sin(G.t*4+ph);
+    const g=ctx.createRadialGradient(lx,ly,0,lx,ly,TL*2.3);
+    g.addColorStop(0,`rgba(255,170,80,${.17*f})`);g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(lx,ly,TL*2.3,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#3a2e1c';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(lx,ly-TL*.5);ctx.lineTo(lx,ly-TL*.2);ctx.stroke();
+    ctx.fillStyle='#5a4628';ctx.fillRect(lx-4,ly-TL*.2,8,11);
+    ctx.strokeStyle='#caa15a';ctx.lineWidth=1;ctx.strokeRect(lx-4,ly-TL*.2,8,11);
+    ctx.fillStyle=`rgba(255,200,110,${f})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=8*f;
+    ctx.fillRect(lx-2.5,ly-TL*.2+2,5,7);ctx.shadowBlur=0;
+  };
+  const crateStack=(cx,cy)=>{
+    ctx.save();ctx.translate(cx,cy);
+    ctx.fillStyle='rgba(0,0,0,.26)';ctx.beginPath();ctx.ellipse(2,14,18,6,0,0,Math.PI*2);ctx.fill();
+    const crate=(ox,oy,s)=>{ctx.fillStyle='#6a4a28';ctx.fillRect(ox-s,oy-s,s*2,s*2);ctx.strokeStyle='#3a2814';ctx.lineWidth=1.5;ctx.strokeRect(ox-s,oy-s,s*2,s*2);ctx.beginPath();ctx.moveTo(ox-s,oy-s);ctx.lineTo(ox+s,oy+s);ctx.moveTo(ox+s,oy-s);ctx.lineTo(ox-s,oy+s);ctx.stroke();ctx.fillStyle='rgba(255,220,150,.06)';ctx.fillRect(ox-s,oy-s,s*2,3);};
+    crate(-6,8,9);crate(11,9,8);crate(2,-6,9);
+    ctx.restore();
+  };
+  // Potted shrub — a clean overlapping leaf cluster (no spindly rotated leaves)
+  const plant=(px,py,s=1)=>{
+    ctx.save();ctx.translate(px,py);ctx.scale(s,s);
+    ctx.fillStyle='rgba(0,0,0,.24)';ctx.beginPath();ctx.ellipse(0,13,12,4,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#7a4a28';ctx.beginPath();ctx.moveTo(-9,2);ctx.lineTo(9,2);ctx.lineTo(7,14);ctx.lineTo(-7,14);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#8a5630';ctx.fillRect(-10,0,20,4);
+    ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(-7,8,14,6);
+    const leaf=(lx,ly,r,col)=>{ctx.fillStyle=col;ctx.beginPath();ctx.arc(lx,ly,r,0,Math.PI*2);ctx.fill();};
+    leaf(0,-7,11,'#2f5a2f'); leaf(-7,-3,8,'#356635'); leaf(7,-3,8,'#356635');
+    leaf(-3,-12,7,'#3a6f3a'); leaf(4,-12,7,'#3a6f3a'); leaf(0,-15,6,'#46824a');
+    leaf(-2,-13,2.4,'rgba(150,210,140,.55)'); leaf(5,-8,2,'rgba(150,210,140,.55)');
+    ctx.restore();
+  };
+  // The Reading Nook — a proper little library: a 3-bay shelf, ladder, reading desk, candle, stool, rug
+  const candelabra=(cx,cy)=>{
+    ctx.save();ctx.translate(cx,cy);
+    const f=.85+.15*Math.sin(G.t*5+cx);
+    const g=ctx.createRadialGradient(0,-14,0,0,-14,TL*1.8);
+    g.addColorStop(0,`rgba(255,180,90,${.16*f})`);g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,-14,TL*1.8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(0,2,11,4,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#3a2e1c';ctx.beginPath();ctx.moveTo(-7,2);ctx.lineTo(7,2);ctx.lineTo(4,-2);ctx.lineTo(-4,-2);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#5a4628';ctx.fillRect(-2,-22,4,24);
+    ctx.strokeStyle='#5a4628';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(0,-16);ctx.quadraticCurveTo(-9,-18,-9,-22);ctx.moveTo(0,-16);ctx.quadraticCurveTo(9,-18,9,-22);ctx.stroke();
+    const cand=(ox,oy)=>{ctx.fillStyle='#e8e0c0';ctx.fillRect(ox-1.5,oy,3,8);const cf=.7+.3*Math.sin(G.t*8+ox+cx);ctx.fillStyle=`rgba(255,195,95,${cf})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=7*cf;ctx.beginPath();ctx.ellipse(ox,oy-3,1.8,3.4*cf,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;};
+    cand(0,-30);cand(-9,-24);cand(9,-24);
+    ctx.restore();
+  };
+  // ── shared bookcase / ivy drawing helpers ──
+  const _bcols=['#7a3030','#3a5a7a','#6a5a2a','#3a6a3a','#5a3a6a','#7a5a30','#3a7a6a','#8a4a3a','#2f4a6e','#5a6a2e','#6a3450','#3a6a5a','#7e6a3a','#4a3a6a'];
+  const _bhash=(n)=>{const s=Math.sin(n*127.1+43.7)*43758.5453;return s-Math.floor(s);};
+  const _tier=(tcx,tbottom,tw,th)=>{
+    const tx=tcx-tw/2, ty=tbottom-th;
+    ctx.fillStyle='rgba(0,0,0,.3)';ctx.fillRect(tx+4,ty+6,tw,th);
+    ctx.fillStyle='#2a1d10';ctx.fillRect(tx,ty,tw,th);
+    ctx.fillStyle='#4a3520';ctx.fillRect(tx,ty,tw,3);ctx.fillRect(tx,ty+th-3,tw,3);ctx.fillRect(tx,ty,3,th);ctx.fillRect(tx+tw-3,ty,3,th);
+    const nb=Math.max(2,Math.round(tw/64)),dv=[];
+    for(let k=1;k<nb;k++){const dx=tx+tw*k/nb;dv.push(dx);ctx.fillRect(dx-1.5,ty,3,th);}
+    const rows=Math.max(1,Math.round(th/24)),comp=(th-6)/rows;
+    for(let row=0;row<rows;row++){const boardY=ty+3+(row+1)*comp;
+      ctx.fillStyle='#3a2817';ctx.fillRect(tx+4,boardY-2,tw-8,2);
+      let prevCi=-1;
+      for(let bx=tx+6;bx<tx+tw-9;bx+=5.5){
+        let near=false;for(let d=0;d<dv.length;d++){if(Math.abs(bx-dv[d])<4){near=true;break;}}
+        if(near){prevCi=-1;continue;}
+        const seed=bx*0.137+boardY*0.91+row*2.3;
+        const bh=Math.min(comp-5,9+Math.floor(_bhash(seed)*6)*1.7);
+        let ci=Math.floor(_bhash(seed+7.3)*_bcols.length);
+        if(ci===prevCi)ci=(ci+1+Math.floor(_bhash(seed+19.1)*(_bcols.length-1)))%_bcols.length;
+        prevCi=ci;
+        ctx.fillStyle=_bcols[ci];ctx.fillRect(bx,boardY-2-bh,4.5,bh);
+        ctx.fillStyle='rgba(255,220,150,.05)';ctx.fillRect(bx,boardY-2-bh,4.5,2);}}
+  };
+  const _ivyLeaf=(ix,iy,r,ang,col)=>{ctx.save();ctx.translate(ix,iy);ctx.rotate(ang);ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(0,-r);ctx.bezierCurveTo(r,-r*.6,r*.7,r*.7,0,r);ctx.bezierCurveTo(-r*.7,r*.7,-r,-r*.6,0,-r);ctx.fill();ctx.restore();};
+  const _vine=(vx,vy,len,down,ph)=>{const dir=down?1:-1,seg=Math.max(3,Math.round(len/8)),pts=[];
+    for(let i=0;i<=seg;i++){const t=i/seg;pts.push([vx+Math.sin(G.t*1.05+ph+t*3.4)*5*t,vy+dir*len*t]);}
+    ctx.strokeStyle='#3c5e30';ctx.lineWidth=1.8;ctx.lineCap='round';ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();ctx.lineCap='butt';
+    for(let i=1;i<pts.length;i++){const side=i%2?1:-1;_ivyLeaf(pts[i][0]+side*2,pts[i][1],3+(i%2),side*.9+i*.5,(i%3?'#5e9648':'#46823a'));}};
+  const _ivyRun=(x0,x1,y,ph)=>{const seg=Math.max(3,Math.round(Math.abs(x1-x0)/11)),pts=[];
+    for(let i=0;i<=seg;i++){const t=i/seg;pts.push([x0+(x1-x0)*t,y+Math.sin(G.t*1.0+ph+t*4)*2.2+Math.sin(t*Math.PI)*3]);}
+    ctx.strokeStyle='#3c5e30';ctx.lineWidth=1.8;ctx.lineCap='round';ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();ctx.lineCap='butt';
+    for(let i=0;i<pts.length;i++){const side=i%2?1:-1;_ivyLeaf(pts[i][0],pts[i][1]+side*2,3+(i%2),side*.8+i*.4,(i%3?'#5e9648':'#46823a'));}
+    for(let i=1;i<pts.length-1;i+=2)_vine(pts[i][0],pts[i][1]+2,8+(i%2)*7,true,ph+i);};
+  const _libDims=(w)=>{const sw=w||120;return{sw,sh:46,sx:-sw/2,sy:-46,topW:Math.round(sw*0.54),topH:36};};
+  // library: everything that sits BEHIND the player — base tier, ivy, ladder, desk, Lou
+  const library=(lx,ly,w)=>{
+    const {sw,sh,sx,sy,topW,topH}=_libDims(w);
+    ctx.save();ctx.translate(lx,ly);
+    const rw=sw*0.42+4;
+    ctx.fillStyle='rgba(60,35,60,.5)';ctx.beginPath();ctx.ellipse(0,32,rw,16,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(180,140,90,.4)';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,32,rw-6,13,0,0,Math.PI*2);ctx.stroke();
+    _tier(0,0,sw,sh);
+    ctx.strokeStyle='#5a3f22';ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.moveTo(sw/2-16,sy-4);ctx.lineTo(sw/2-10,sy+sh+8);ctx.moveTo(sw/2-26,sy-4);ctx.lineTo(sw/2-20,sy+sh+8);ctx.stroke();
+    ctx.lineWidth=1.5;for(let r=0;r<5;r++){const ry=sy+r*11;ctx.beginPath();ctx.moveTo(sw/2-26+r*1.2,ry);ctx.lineTo(sw/2-16+r*1.2,ry);ctx.stroke();}
+    for(let k=0;k<5;k++){_vine(sx+18+k*(sw-36)/4,sy+2,16+((k*6)%14),true,k*1.4);}
+    _vine(sx+3,0,sh+12,false,.5);_vine(sx+sw-3,0,sh+12,false,2.1);
+    _ivyRun(sx+5,-topW/2-2,sy+1,1.1);
+    _ivyRun(topW/2+2,sx+sw-5,sy+1,2.0);
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(-6,40,30,9,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5a3b22';ctx.fillRect(-34,24,52,5);
+    ctx.fillStyle='#3a2614';ctx.fillRect(-32,29,4,12);ctx.fillRect(12,29,4,12);
+    ctx.fillStyle='#e8dcc0';
+    ctx.beginPath();ctx.moveTo(-18,24);ctx.lineTo(-2,22);ctx.lineTo(-2,26);ctx.lineTo(-18,28);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(-2,22);ctx.lineTo(14,24);ctx.lineTo(14,28);ctx.lineTo(-2,26);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(120,90,60,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(-2,22.5);ctx.lineTo(-2,26.5);ctx.stroke();
+    const cf=.7+.3*Math.sin(G.t*7+lx);
+    const g=ctx.createRadialGradient(21,20,0,21,20,TL*1.7);g.addColorStop(0,`rgba(255,170,80,${.13*cf})`);g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(21,20,TL*1.7,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#e8e0c0';ctx.fillRect(20,18,3,7);
+    ctx.fillStyle=`rgba(255,190,90,${cf})`;ctx.shadowColor='#ffb050';ctx.shadowBlur=8*cf;ctx.beginPath();ctx.arc(21.5,16,2.2*cf,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle='#5a3b22';ctx.beginPath();ctx.ellipse(-6,44,9,4,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#3a2614';ctx.fillRect(-13,44,3,9);ctx.fillRect(0,44,3,9);
+    ctx.fillStyle='#3a6a3a';ctx.fillRect(-52,40,18,5);ctx.fillStyle='#7a3030';ctx.fillRect(-50,35,16,5);ctx.fillStyle='#3a5a7a';ctx.fillRect(-48,30,14,5);
+    ctx.save();ctx.translate(44,38);
+    ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(0,7,18,6,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#6a2e3a';ctx.beginPath();ctx.ellipse(0,2,17,9,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#854050';ctx.beginPath();ctx.ellipse(0,0,15,7.5,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(220,180,120,.4)';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,0,15,7.5,0,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='#d8b870';[[-13,-5],[13,-5],[-13,5],[13,5]].forEach(([tx,ty])=>{ctx.beginPath();ctx.arc(tx,ty,1.5,0,Math.PI*2);ctx.fill();});
+    const _pet=Math.max(0,1-(G.t-(G._catPet??-9))/1.3);
+    const lcb=Math.sin(G.t*(2+_pet*7)+1.7)*(.4+_pet*.55);
+    ctx.fillStyle='#1c1c1f';ctx.beginPath();ctx.ellipse(1,-3,11,6.5+lcb,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(120,120,140,.14)';ctx.beginPath();ctx.ellipse(2,-6,7,2,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#f1efe8';
+    ctx.beginPath();ctx.ellipse(-4,1,8,4.6+lcb*.5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(8,-1,3.4,2.8,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(-7,4.5,3,1.8,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#1c1c1f';ctx.beginPath();ctx.ellipse(-9,-4,4.8,4.2,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#f1efe8';
+    ctx.beginPath();ctx.ellipse(-10.6,-2.8,3,2.5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.moveTo(-9.3,-8.2);ctx.lineTo(-8.1,-8.2);ctx.lineTo(-8.7,-3.4);ctx.lineTo(-9.7,-3.4);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#16161a';
+    ctx.beginPath();ctx.moveTo(-12.4,-6.8);ctx.lineTo(-10.5,-10.8);ctx.lineTo(-8.6,-7.1);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(-7.7,-7);ctx.lineTo(-6.2,-10.8);ctx.lineTo(-4.9,-7.2);ctx.closePath();ctx.fill();
+    ctx.lineCap='round';
+    ctx.strokeStyle='#1c1c1f';ctx.lineWidth=3.2;ctx.beginPath();ctx.moveTo(10,-1);ctx.quadraticCurveTo(15.5,-5,11,-9.6);ctx.stroke();
+    ctx.strokeStyle='#f1efe8';ctx.lineWidth=3.2;ctx.beginPath();ctx.moveTo(11.8,-8.7);ctx.lineTo(11,-9.6);ctx.stroke();
+    ctx.lineCap='butt';
+    ctx.fillStyle='#d98a9a';ctx.beginPath();ctx.arc(-12.6,-3,.9,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#3a3a3a';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(-10.6,-4.6);ctx.lineTo(-7.9,-4.8);ctx.stroke();
+    ctx.strokeStyle='rgba(235,235,228,.7)';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(-12.2,-2.6);ctx.lineTo(-17.5,-3.2);ctx.moveTo(-12.2,-1.9);ctx.lineTo(-17,-1);ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+  };
+  // libraryTop: the tall second tier + its top ivy — drawn AFTER players so it occludes them (verticality)
+  const libraryTop=(lx,ly,w)=>{
+    const {sw,sx,sy,topW,topH}=_libDims(w);
+    ctx.save();ctx.translate(lx,ly);
+    _tier(0,sy,topW,topH);
+    _vine(-topW/2+12,sy-topH+3,28,true,1.2);_vine(topW/2-12,sy-topH+3,32,true,3.1);
+    _ivyRun(-topW/2-6,topW/2+6,sy-topH+2,.4);
+    ctx.restore();
+  };
+  // side-wall + top-wall lanterns — long warm walls for the bigger hall
+  [[TL*.7,TL*6.5,0],[TL*.7,TL*26,3.0],
+   [TL*(HW-.7),TL*6.5,.6],[TL*(HW-.7),TL*26,3.6],
+   [TL*11,TL*.7,4.0],[TL*21,TL*.7,4.6]].forEach(([lx,ly,ph])=>lantern(lx,ly,ph));
+  drawFireside(TL*1.5,TL*16,1);            // left hearth
+  drawFireside(TL*(HW-1.5),TL*16,-1);      // right hearth (mirrored)
+  // Tall stone back wall + stained-glass windows set into it, flanking the Trial gate
+  drawNorthWall();
+  drawStainedWindow(TL*10, TL*1.5, 0);  drawStainedWindow(TL*22, TL*1.5, 2);
+  drawChampionDais(DAIS_X,DAIS_Y,G.hubNear?.type==='dais');
+  candelabra(DAIS_X-TL*3,DAIS_Y); candelabra(DAIS_X+TL*3,DAIS_Y);   // symmetric candles flanking the dais
+  // (library/bookcase now draws AFTER the players in drawHub, so it occludes the character — depth)
+  plant(TL*3,TL*6); plant(TL*(HW-3),TL*6);                          // symmetric corner plants
+  // lush greenery framing the library
+  plant(TL*11.8,TL*30.2,1.3);  plant(TL*20.2,TL*30.2,1.3);
+  plant(TL*10.3,TL*31.0,1.0);  plant(TL*21.7,TL*31.0,1.0);
+  plant(TL*12.7,TL*31.6,.75);  plant(TL*19.3,TL*31.6,.75);
+  // Festive bunting — tiers of realm-coloured pennants strung across the whole hall
+  {
+    const bc=['#a85cdc','#88d8ff','#e0843c','#5c78c8','#4a9a4a','#cc88ee','#e0b85a'];
+    const swag=(x0,y0,x1,y1,sag,n,ph)=>{
+      ctx.strokeStyle='rgba(40,30,18,.7)';ctx.lineWidth=1.5;ctx.beginPath();
+      for(let i=0;i<=n;i++){const t=i/n,x=x0+(x1-x0)*t,y=y0+(y1-y0)*t+Math.sin(t*Math.PI)*sag;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+      ctx.stroke();
+      for(let i=0;i<n;i++){const t=(i+.5)/n,x=x0+(x1-x0)*t,y=y0+(y1-y0)*t+Math.sin(t*Math.PI)*sag,c=bc[(i+ph)%bc.length],fl=Math.sin(G.t*2+i+ph)*1.2;
+        ctx.fillStyle=hexA(c,.85);ctx.beginPath();ctx.moveTo(x-5,y);ctx.lineTo(x+5,y);ctx.lineTo(x+fl,y+11);ctx.closePath();ctx.fill();
+        ctx.fillStyle='rgba(0,0,0,.15)';ctx.beginPath();ctx.moveTo(x,y+2);ctx.lineTo(x+5,y);ctx.lineTo(x+fl,y+11);ctx.closePath();ctx.fill();}
+    };
+    const Lx=TL*3,Rx=TL*(HW-3);
+    [[TL*1.05,TL*0.9,0],[TL*5,TL*1.0,2],[TL*9,TL*1.05,4],[TL*13,TL*1.05,6],[TL*17,TL*1.1,1],[TL*21,TL*1.1,3]]
+      .forEach(([y,sag,ph])=>swag(Lx,y,Rx,y,sag,15,ph));
+  }
+
+  // Themed realm dioramas in front of each portal (drawn before the archways)
+  HUB_DOORS.forEach(d=>drawHubAlcove(d));
 
   // Portal archways — GDL-style: stone pillars, dark void, themed motif + swirling energy
   HUB_DOORS.forEach((d,i)=>{
@@ -1056,28 +1646,8 @@ function drawHub(){
     ctx.fillStyle=stCol;ctx.fillText(stTxt,d.wx,labelY+18);
   });
 
-  // Hub crystals — drawn AFTER portals so they float visibly inside the portal void
-  HUB_CRYSTALS.forEach((c,ci)=>{
-    if(G.progress.hubCrystals[ci])return;
-    const pulse=.75+.25*Math.sin(G.t*3.2+ci*1.4);
-    const bob=Math.sin(G.t*2.5+ci*1.3)*3;
-    ctx.save();ctx.translate(c.x,c.y+bob);
-
-    // Outer glow — explicit larger diamond (scaling looks circular at small sizes)
-    ctx.globalAlpha=pulse*.15;ctx.fillStyle='#f5c542';
-    ctx.beginPath();ctx.moveTo(0,-22);ctx.lineTo(16,0);ctx.lineTo(0,22);ctx.lineTo(-16,0);ctx.closePath();ctx.fill();
-
-    // Core diamond
-    ctx.globalAlpha=pulse;ctx.fillStyle='#f5c542';
-    ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(8,0);ctx.lineTo(0,11);ctx.lineTo(-8,0);ctx.closePath();ctx.fill();
-
-    // Inner facet — tiny diamond, no arc
-    ctx.globalAlpha=pulse*.55;ctx.fillStyle='#fffce8';
-    ctx.beginPath();ctx.moveTo(0,-4);ctx.lineTo(3,0);ctx.lineTo(0,4);ctx.lineTo(-3,0);ctx.closePath();ctx.fill();
-
-    ctx.globalAlpha=1;
-    ctx.restore();
-  });
+  // Heraldic banners hang above each gate (drawn after the arches so they sit on top)
+  HUB_DOORS.forEach(d=>drawHubBanner(d));
 
   // ── THE TIPSY WYRM — tavern nook (the warm heart of the hub) ──
   const near=G.hubNear?.type==='sumner';
@@ -1105,9 +1675,10 @@ function drawHub(){
     ctx.restore();
   };
   // Flanking barrels + a stacked keg (behind the counter)
-  barrel(HSX-34,HSY+6,1.0);
-  barrel(HSX+34,HSY+4,1.05);
-  barrel(HSX+30,HSY-12,.8);
+  barrel(HSX-34,HSY+5,1.0);
+  barrel(HSX+34,HSY+5,1.0);
+  barrel(HSX-30,HSY-12,.85);
+  barrel(HSX+30,HSY-12,.85);
 
   // Hanging tavern sign above the bar
   ctx.save();
@@ -1131,12 +1702,19 @@ function drawHub(){
   ctx.fillStyle='#5a3b22';ctx.fillRect(HSX-32,HSY+18,64,13);
   ctx.fillStyle='#6e4a2c';ctx.fillRect(HSX-32,HSY+18,64,4);           // worn top edge
   ctx.fillStyle='#4a2f1a';ctx.fillRect(HSX-32,HSY+29,64,2);           // base shadow
+  // bar stools out front
+  [HSX-20,HSX+20].forEach(stx=>{
+    ctx.fillStyle='rgba(0,0,0,.26)';ctx.beginPath();ctx.ellipse(stx,HSY+40,9,3.5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5a3b22';ctx.beginPath();ctx.ellipse(stx,HSY+33,8,4,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#6e4a2c';ctx.beginPath();ctx.ellipse(stx,HSY+32,8,3.5,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#3a2614';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(stx-5,HSY+34);ctx.lineTo(stx-6,HSY+41);ctx.moveTo(stx+5,HSY+34);ctx.lineTo(stx+6,HSY+41);ctx.moveTo(stx,HSY+35);ctx.lineTo(stx,HSY+41);ctx.stroke();
+  });
   ctx.strokeStyle=near?'rgba(212,168,83,.7)':'rgba(212,168,83,.3)';ctx.lineWidth=1;
   ctx.strokeRect(HSX-32,HSY+18,64,13);
   // tankards + a candle on the counter
   ctx.fillStyle='#caa15a';
-  ctx.fillRect(HSX-22,HSY+13,5,6);ctx.fillRect(HSX+16,HSY+13,5,6);
-  ctx.fillStyle='#f5f0e0';ctx.beginPath();ctx.arc(HSX-19.5,HSY+13,2,0,Math.PI*2);ctx.arc(HSX+18.5,HSY+13,2,0,Math.PI*2);ctx.fill();
+  ctx.fillRect(HSX-22,HSY+13,5,6);ctx.fillRect(HSX+17,HSY+13,5,6);
+  ctx.fillStyle='#f5f0e0';ctx.beginPath();ctx.arc(HSX-19.5,HSY+13,2,0,Math.PI*2);ctx.arc(HSX+19.5,HSY+13,2,0,Math.PI*2);ctx.fill();
   // candle flame
   const cf=.7+.3*Math.sin(G.t*7);
   ctx.fillStyle='#e8e0c0';ctx.fillRect(HSX-1,HSY+14,2,5);
@@ -1144,8 +1722,8 @@ function drawHub(){
   ctx.beginPath();ctx.arc(HSX,HSY+12,2*cf,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
 
   // Proximity prompt (drawn in world space above character)
-  if(G.hubNear){
-    const label=G.hubNear.type==='sumner'?'🍺 / Z  The Gilded Gauntlet':(()=>{
+  if(G.hubNear&&G.hubNear.type!=='cat'){   // the cat uses an always-on label below instead
+    const label=G.hubNear.type==='sumner'?'🍺 / Z  Shop':G.hubNear.type==='dais'?"⚔ / Z  Change Hero":G.hubNear.type==='cat'?'🐾 / Z  Pet Lou':(()=>{
       const d=HUB_DOORS[G.hubNear.i];
       if(d.comingSoon)return `✦ ${d.name} — Coming Soon`;
       if(d.bossRush){
@@ -1171,6 +1749,16 @@ function drawHub(){
   ctx.fillRect(DEV_X-TL*.3,DEV_Y-TL*.3,TL*.6,TL*.6);
   ctx.globalAlpha=1;
 
+  // Firelit ambient motes drifting up through the hall — quiet fireside atmosphere
+  for(let i=0;i<22;i++){
+    const seed=i*47.3, cycle=(G.t*0.16+i*0.37)%1;
+    const ex=HSX+Math.sin(seed)*TL*9.5+Math.sin(G.t*0.5+seed)*TL*1.2;
+    const ey=(HH*TL)*(1-cycle)*0.92+TL*1.2+Math.cos(G.t*0.7+seed)*TL*0.6;
+    const a=Math.sin(cycle*Math.PI)*0.32, warm=i%3===0;
+    ctx.fillStyle=warm?`rgba(255,180,90,${a})`:`rgba(255,232,182,${a*.7})`;
+    ctx.beginPath();ctx.arc(ex,ey,warm?1.8:1.2,0,Math.PI*2);ctx.fill();
+  }
+
   // Draw players inside world-space transform so translate(rp.x,rp.y) works correctly
   G.players.forEach(rp=>{
     if(rp&&rp!==G.p&&(rp.playerMode==='hub'||!rp.playerMode))drawRemotePlayer(rp);
@@ -1178,9 +1766,55 @@ function drawHub(){
   drawPlayer2();
   if(G.p.familiar){famOrbit(G.p,G.localIdx||0);drawFamiliar(G.p);}
   drawProjs();
-  // Particles
+  // The whole library (bookcase + desk + Lou) draws after the players & projectiles so it occludes
+  // the character standing in front of it — gives depth and stops the weapon poking through the shelf.
+  library(TL*16,TL*30.6,260); libraryTop(TL*16,TL*30.6,260);
+  // Always-visible "Pet Lou" label, sitting just above Lou (drawn after the library so the shelf never hides it)
+  { const lbl='🐾 / Z  Pet Lou', ly=CAT_Y-TL*0.85;
+    ctx.font='11px IM Fell English,serif';
+    const lw=ctx.measureText(lbl).width+16;
+    ctx.fillStyle='rgba(0,0,0,.58)'; ctx.fillRect(CAT_X-lw/2,ly-12,lw,24);
+    ctx.fillStyle='#f0e0c0'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(lbl,CAT_X,ly); }
+  // Particles (pet sparkles + hearts render on top of the library)
   drawParts();
   ctx.restore(); // back to screen space
+
+  // ── OBJECTIVE ARROW — one chevron at the screen edge points to the level that's immediately open ──
+  // The floor runners still show every gate; this single arrow just tips toward your current
+  // frontier (the unlocked, not-yet-cleared realm — or the Trial once everything's done).
+  {
+    const trialReady=REALMS.every(r=>G.progress.rp[r.id]?.bossDown);
+    let openDoor=null;
+    HUB_DOORS.filter(d=>d.realm&&!d.comingSoon).sort((a,b)=>a.realm.order-b.realm.order).some(d=>{
+      const pr=G.progress.rp[d.realm.id];
+      if(G.progress.unlocked.includes(d.realm.id)&&!(pr&&pr.bossDown)){openDoor=d;return true;}
+      return false;
+    });
+    if(!openDoor&&trialReady) openDoor=HUB_DOORS.find(d=>d.bossRush)||null;
+    const beaconDoors=openDoor?[openDoor]:[];
+    const Zb=CAMZOOM, cxs=cv.width/2, cys=cv.height/2, mg=50, topPad=34;
+    beaconDoors.forEach(d=>{
+      const sx=(d.wx-G.cam.x-cv.width/2)*Zb+cv.width/2, sy=(d.wy-G.cam.y-cv.height/2)*Zb+cv.height/2;
+      if(sx>mg&&sx<cv.width-mg&&sy>mg+topPad&&sy<cv.height-mg)return; // gate already visible
+      let dx=sx-cxs,dy=sy-cys;const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
+      const halfW=cv.width/2-mg, halfH=cv.height/2-mg;
+      const t=Math.min(dx!==0?halfW/Math.abs(dx):1e9, dy!==0?halfH/Math.abs(dy):1e9);
+      const ex=cxs+dx*t, ey=clamp(cys+dy*t,mg+topPad,cv.height-mg), ang=Math.atan2(dy,dx);
+      const wdist=Math.hypot(d.wx-G.p.x,d.wy-G.p.y)/TL, prox=clamp(1-(wdist-4)/28,.35,1);
+      ctx.save();ctx.translate(ex,ey);
+      const hg=ctx.createRadialGradient(0,0,0,0,0,26*prox+14);
+      hg.addColorStop(0,hexA(d.cc,.32*prox));hg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=hg;ctx.beginPath();ctx.arc(0,0,26*prox+14,0,Math.PI*2);ctx.fill();
+      ctx.save();ctx.rotate(ang);
+      ctx.fillStyle=hexA(d.cc,.55+.4*prox);ctx.shadowColor=d.cc;ctx.shadowBlur=8;
+      const cw=11*(.75+.5*prox);
+      ctx.beginPath();ctx.moveTo(cw*1.1,0);ctx.lineTo(-cw*.5,-cw*.8);ctx.lineTo(-cw*.05,0);ctx.lineTo(-cw*.5,cw*.8);ctx.closePath();ctx.fill();
+      ctx.restore();ctx.shadowBlur=0;
+      ctx.save();ctx.translate(-dx*20,-dy*20);const gs=.46*(.85+.4*prox);ctx.scale(gs,gs);drawDoorMotif(d.motif,0,0,d.cc,.6+.35*prox);ctx.restore();
+      ctx.restore();
+    });
+  }
 
   // Joystick (interact button instead of attack)
   drawJoy();
@@ -1330,14 +1964,24 @@ function buildBossRoom(realm,map,torches){
   const cx=bx+Math.floor(bw/2),cy=by+Math.floor(bh/2);
   const room={x:bx,y:by,w:bw,h:bh,cx,cy};
   const bossWx=(bx+bw/2+.5)*TL, bossWy=(by+4.5)*TL;
-  const playerStart={x:(bx+bw/2+.5)*TL,y:(by+bh-3.5)*TL};
 
   if(realm.id==='forsaken') buildLichRoom(map,bx,by,bw,bh,decos);
   else if(realm.id==='mountain') buildWyrmRoom(map,bx,by,bw,bh,decos);
   else if(realm.id==='castle') buildDragonRoom(map,bx,by,bw,bh,decos);
   else if(realm.id==='ice') buildIceRoom(map,bx,by,bw,bh,decos);
 
-  return{room,playerStart,bossWx,bossWy,decos};
+  // ── ANTECHAMBER + SEALABLE GATE (boss theatrics) ──
+  // A spawn room sits below the arena, joined through a gate in the south wall. The gate
+  // slams shut when the boss wakes and re-opens on death; the player respawns out here.
+  const cxT=bx+Math.floor(bw/2), southY=by+bh-1;
+  for(let yy=southY; yy<=southY+2; yy++) for(let xx=cxT-1; xx<=cxT+1; xx++) if(map[yy])map[yy][xx]=TFLOOR; // gate + short corridor (gate starts OPEN)
+  const acx0=cxT-3, acx1=cxT+3, acy0=southY+3, acy1=southY+7;
+  for(let yy=acy0; yy<=acy1&&yy<MH; yy++) for(let xx=acx0; xx<=acx1&&xx<MW; xx++) if(map[yy]&&xx>=0) map[yy][xx]=TFLOOR;
+  [[acx0-1,acy0],[acx1+1,acy0]].forEach(([tx,ty])=>{if(map[ty]?.[tx]===TWALL)torches.push({x:tx,y:ty,ph:Math.random()*Math.PI*2,wall:true,side:true});});
+  const bossDoor={tiles:[[cxT-1,southY],[cxT,southY],[cxT+1,southY]], sealed:false, animCur:0};
+  const playerStart={x:(cxT+.5)*TL, y:((acy0+acy1)/2+.5)*TL};
+
+  return{room,playerStart,bossWx,bossWy,decos,bossDoor,bossSpawn:{x:bossWx,y:bossWy}};
 }
 
 // ── THE LICH — Ancient Crypt ──────────────────────────────
@@ -1458,10 +2102,15 @@ function drawBossDecos(decos){
         break;
       }
       case 'bones':{
-        ctx.fillStyle='rgba(210,195,185,.3)';
-        ctx.fillRect(-14,-3,28,5);ctx.fillRect(-5,-15,4,24);
-        ctx.beginPath();ctx.arc(-9,9,5,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.arc(9,-9,5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(0,3,16,7,0,0,Math.PI*2);ctx.fill(); // ground shadow
+        ctx.strokeStyle='rgba(208,200,184,.5)';ctx.lineWidth=3;ctx.lineCap='round';
+        ctx.beginPath();ctx.moveTo(-13,-6);ctx.lineTo(12,5);ctx.stroke();   // crossed long bones
+        ctx.beginPath();ctx.moveTo(-12,7);ctx.lineTo(11,-7);ctx.stroke();
+        ctx.lineCap='butt';
+        ctx.fillStyle='rgba(214,206,190,.55)';[[-13,-6],[12,5],[-12,7],[11,-7]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,2.4,0,Math.PI*2);ctx.fill();}); // knuckle ends
+        ctx.fillStyle='rgba(216,209,192,.7)';ctx.beginPath();ctx.arc(2,-2,5.5,0,Math.PI*2);ctx.fill(); // small skull
+        ctx.fillStyle='rgba(184,178,160,.7)';ctx.fillRect(-1.5,2.5,7,3.2);
+        ctx.fillStyle='rgba(20,12,26,.8)';ctx.beginPath();ctx.arc(0,-2.5,1.4,0,Math.PI*2);ctx.arc(4.2,-2.5,1.4,0,Math.PI*2);ctx.fill();
         break;
       }
 
@@ -1547,34 +2196,35 @@ function drawBossDecos(decos){
         break;
       }
       case 'cobweb':{
-        ctx.strokeStyle='rgba(200,190,180,.2)';ctx.lineWidth=.8;
-        for(let i=0;i<8;i++){
-          const a=(i/8)*Math.PI*2;
-          ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*TL*.65,Math.sin(a)*TL*.65);ctx.stroke();
-        }
-        for(let r=1;r<=3;r++){
-          const rad=TL*.2*r;
+        ctx.strokeStyle='rgba(205,200,190,.17)';ctx.lineWidth=.8;
+        const ax=-TL*.5, ay=-TL*.5, R=TL*1.05; // anchored into the top-left corner
+        const spokes=[];
+        for(let i=0;i<=4;i++){const a=(i/4)*(Math.PI*.5);const ex=ax+Math.cos(a)*R,ey=ay+Math.sin(a)*R;spokes.push([ex,ey]);ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(ex,ey);ctx.stroke();}
+        for(let ring=1;ring<=3;ring++){const t=ring/3.6;
           ctx.beginPath();
-          for(let i=0;i<=8;i++){
-            const a=(i/8)*Math.PI*2,px=Math.cos(a)*rad,py=Math.sin(a)*rad;
-            i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
-          }
-          ctx.closePath();ctx.stroke();
+          for(let i=0;i<spokes.length;i++){const x=ax+(spokes[i][0]-ax)*t,y=ay+(spokes[i][1]-ay)*t;
+            if(i===0)ctx.moveTo(x,y);else{const px=ax+(spokes[i-1][0]-ax)*t,py=ay+(spokes[i-1][1]-ay)*t;ctx.quadraticCurveTo((px+x)/2+(x-ax)*.06,(py+y)/2+(y-ay)*.06,x,y);}}
+          ctx.stroke();
         }
-        ctx.fillStyle='rgba(140,120,110,.3)';ctx.beginPath();ctx.arc(TL*.22,TL*.18,2.5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(150,140,128,.3)';ctx.beginPath();ctx.arc(ax+R*.4,ay+R*.4,2,0,Math.PI*2);ctx.fill(); // little spider
         break;
       }
       case 'gravestone':{
+        ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(0,TL*.16,TL*.27,TL*.09,0,0,Math.PI*2);ctx.fill();
         ctx.save();ctx.rotate(-.12+Math.sin(d.wx*.0013)*.08);
-        ctx.fillStyle='#282030';
+        const gg=ctx.createLinearGradient(-TL*.24,-TL*.6,TL*.24,TL*.1);
+        gg.addColorStop(0,'#322a3e');gg.addColorStop(1,'#1e1828');
+        ctx.fillStyle=gg;
         ctx.beginPath();ctx.arc(0,-TL*.52,TL*.24,Math.PI,0);ctx.fill();
         ctx.fillRect(-TL*.24,-TL*.52,TL*.48,TL*.68);
-        ctx.strokeStyle='#3a2e45';ctx.lineWidth=1.5;
+        ctx.strokeStyle='#46384f';ctx.lineWidth=1.5;
         ctx.beginPath();ctx.arc(0,-TL*.52,TL*.24,Math.PI,0);ctx.stroke();
         ctx.strokeRect(-TL*.24,-TL*.52,TL*.48,TL*.68);
+        ctx.fillStyle='rgba(255,255,255,.07)';ctx.fillRect(-TL*.24,-TL*.52,TL*.06,TL*.68); // lit left edge
+        ctx.fillStyle='rgba(55,95,45,.4)';ctx.beginPath();ctx.ellipse(-TL*.06,TL*.06,TL*.16,TL*.08,.2,0,Math.PI*2);ctx.fill(); // moss at base
         ctx.strokeStyle='rgba(80,60,100,.55)';ctx.lineWidth=1;
-        ctx.beginPath();ctx.moveTo(-TL*.04,-TL*.38);ctx.lineTo(TL*.1,-TL*.08);ctx.lineTo(-TL*.02,TL*.1);ctx.stroke();
-        ctx.fillStyle='rgba(160,140,185,.3)';ctx.font=`${TL*.17|0}px serif`;
+        ctx.beginPath();ctx.moveTo(-TL*.04,-TL*.38);ctx.lineTo(TL*.1,-TL*.08);ctx.lineTo(-TL*.02,TL*.1);ctx.stroke(); // crack
+        ctx.fillStyle='rgba(170,150,195,.32)';ctx.font=`${TL*.17|0}px serif`;
         ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('RIP',0,-TL*.32);
         ctx.restore();
         break;
@@ -1634,33 +2284,40 @@ function drawBossDecos(decos){
         break;
       }
       case 'carpet':{
-        const hh=d.halfH||TL*5;
-        // Main carpet
-        ctx.fillStyle='rgba(130,15,15,.45)';ctx.fillRect(-TL*.48,-hh,TL*.96,hh*2);
-        // Gold border lines
-        ctx.strokeStyle='rgba(190,148,40,.35)';ctx.lineWidth=2;
-        ctx.strokeRect(-TL*.48,-hh,TL*.96,hh*2);
-        ctx.beginPath();ctx.moveTo(-TL*.38,-hh);ctx.lineTo(-TL*.38,hh);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(TL*.38,-hh);ctx.lineTo(TL*.38,hh);ctx.stroke();
-        // Medallion pattern
-        for(let ry=-hh+TL*1.5;ry<hh-TL;ry+=TL*2.5){
-          ctx.fillStyle='rgba(190,148,40,.15)';
-          ctx.beginPath();ctx.arc(0,ry,TL*.22,0,Math.PI*2);ctx.fill();
-          ctx.strokeStyle='rgba(190,148,40,.25)';ctx.lineWidth=1;ctx.stroke();
+        const hh=d.halfH||TL*5, hw=TL*.5;
+        // Woven body — deep red with subtle vertical weave stripes
+        ctx.fillStyle='rgba(120,22,22,.82)';ctx.fillRect(-hw,-hh,hw*2,hh*2);
+        ctx.fillStyle='rgba(150,30,30,.32)';
+        for(let wxp=-hw+3;wxp<hw;wxp+=6)ctx.fillRect(wxp,-hh,2,hh*2);
+        // Darker inner field + double gold border
+        ctx.fillStyle='rgba(78,12,12,.5)';ctx.fillRect(-hw+TL*.16,-hh+TL*.16,hw*2-TL*.32,hh*2-TL*.32);
+        ctx.strokeStyle='rgba(200,158,52,.6)';ctx.lineWidth=2.5;ctx.strokeRect(-hw+3,-hh+3,hw*2-6,hh*2-6);
+        ctx.strokeStyle='rgba(200,158,52,.32)';ctx.lineWidth=1.5;ctx.strokeRect(-hw+TL*.14,-hh+TL*.14,hw*2-TL*.28,hh*2-TL*.28);
+        // Diamond medallions down the spine
+        for(let ry=-hh+TL*1.4;ry<hh-TL;ry+=TL*2.2){
+          ctx.strokeStyle='rgba(210,168,60,.5)';ctx.lineWidth=1.5;
+          ctx.beginPath();ctx.moveTo(0,ry-TL*.26);ctx.lineTo(TL*.2,ry);ctx.lineTo(0,ry+TL*.26);ctx.lineTo(-TL*.2,ry);ctx.closePath();
+          ctx.fillStyle='rgba(210,168,60,.16)';ctx.fill();ctx.stroke();
+          ctx.fillStyle='rgba(230,190,90,.5)';ctx.beginPath();ctx.arc(0,ry,2,0,Math.PI*2);ctx.fill();
+        }
+        // Fringe at both ends
+        ctx.strokeStyle='rgba(200,170,90,.5)';ctx.lineWidth=1.5;
+        for(let fx=-hw+2;fx<hw;fx+=4){
+          ctx.beginPath();ctx.moveTo(fx,-hh);ctx.lineTo(fx,-hh-TL*.16);ctx.stroke();
+          ctx.beginPath();ctx.moveTo(fx,hh);ctx.lineTo(fx,hh+TL*.16);ctx.stroke();
         }
         break;
       }
       // ── FORSAKEN extras ───────────────────
       case 'chain_wall':{
-        ctx.strokeStyle='rgba(120,110,100,.55)';ctx.lineWidth=2.5;
-        // Draping chain links
-        for(let i=0;i<6;i++){
-          const y=i*TL*.14-TL*.3;
-          const ox=Math.sin(i*.9)*TL*.1;
-          ctx.beginPath();ctx.ellipse(ox,y,TL*.07,TL*.04,i*.3,0,Math.PI*2);ctx.stroke();
-        }
-        // Wall pin
-        ctx.fillStyle='#887868';ctx.beginPath();ctx.arc(0,-TL*.35,TL*.04,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#5a5048';ctx.fillRect(-TL*.06,-TL*.4,TL*.12,TL*.055); // mounting bracket
+        ctx.fillStyle='#3a342e';ctx.beginPath();ctx.arc(0,-TL*.345,TL*.04,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='rgba(150,140,128,.6)';ctx.lineWidth=2; // chain — links alternate orientation
+        let y=-TL*.3;
+        for(let i=0;i<6;i++){const ox=Math.sin(i*1.1)*TL*.045,vert=i%2===0;
+          ctx.beginPath();ctx.ellipse(ox,y,vert?TL*.032:TL*.052,vert?TL*.058:TL*.032,0,0,Math.PI*2);ctx.stroke();y+=TL*.082;}
+        ctx.strokeStyle='rgba(130,120,110,.65)';ctx.lineWidth=3; // open manacle at the end
+        ctx.beginPath();ctx.arc(Math.sin(6*1.1)*TL*.045,y+TL*.01,TL*.07,Math.PI*.15,Math.PI*1.85);ctx.stroke();
         break;
       }
       case 'blood_pool':{
@@ -1749,25 +2406,20 @@ function drawBossDecos(decos){
         break;
       }
       case 'armor_stand':{
-        // Suit of armour silhouette — top-down with slight perspective
-        ctx.fillStyle='#252230';
-        // Helmet
-        ctx.beginPath();ctx.arc(0,-TL*.42,TL*.16,0,Math.PI*2);ctx.fill();
-        ctx.strokeStyle='#3c3850';ctx.lineWidth=1.5;ctx.stroke();
-        // Visor slit
-        ctx.fillStyle='rgba(80,200,255,.15)';ctx.fillRect(-TL*.09,-TL*.46,TL*.18,TL*.06);
-        // Breastplate
-        ctx.fillStyle='#252230';
-        ctx.beginPath();ctx.arc(0,-TL*.15,TL*.22,0,Math.PI*2);ctx.fill();
-        ctx.strokeStyle='#3c3850';ctx.stroke();
-        // Pauldrons (shoulders)
-        [[-TL*.28,-TL*.24],[TL*.28,-TL*.24]].forEach(([px,py])=>{
-          ctx.fillStyle='#1e1c2a';ctx.beginPath();ctx.arc(px,py,TL*.1,0,Math.PI*2);ctx.fill();
-          ctx.strokeStyle='#3c3850';ctx.stroke();
-        });
-        // Gorget detail line
-        ctx.strokeStyle='rgba(160,150,200,.25)';ctx.lineWidth=1;
-        ctx.beginPath();ctx.arc(0,-TL*.3,TL*.12,Math.PI*.2,Math.PI*.8);ctx.stroke();
+        // Ground shadow
+        ctx.fillStyle='rgba(0,0,0,.32)';ctx.beginPath();ctx.ellipse(0,TL*.06,TL*.26,TL*.1,0,0,Math.PI*2);ctx.fill();
+        // Suit of armour — gradient metal, lit from upper-left
+        const mg=ctx.createLinearGradient(-TL*.2,-TL*.5,TL*.2,TL*.1);
+        mg.addColorStop(0,'#3a3650');mg.addColorStop(1,'#1c1a28');
+        ctx.fillStyle=mg;ctx.beginPath();ctx.arc(0,-TL*.42,TL*.16,0,Math.PI*2);ctx.fill(); // helmet
+        ctx.strokeStyle='#4c4868';ctx.lineWidth=1.5;ctx.stroke();
+        ctx.fillStyle='rgba(255,255,255,.18)';ctx.beginPath();ctx.arc(-TL*.05,-TL*.47,TL*.05,0,Math.PI*2);ctx.fill(); // helmet glint
+        ctx.fillStyle='rgba(90,210,255,.45)';ctx.shadowColor='#5ac8ff';ctx.shadowBlur=6;ctx.fillRect(-TL*.09,-TL*.45,TL*.18,TL*.05);ctx.shadowBlur=0; // glowing visor
+        ctx.fillStyle=mg;ctx.beginPath();ctx.arc(0,-TL*.15,TL*.22,0,Math.PI*2);ctx.fill(); // breastplate
+        ctx.strokeStyle='#4c4868';ctx.stroke();
+        ctx.fillStyle='rgba(255,255,255,.12)';ctx.beginPath();ctx.arc(-TL*.07,-TL*.2,TL*.06,0,Math.PI*2);ctx.fill(); // chest glint
+        [[-TL*.28,-TL*.24],[TL*.28,-TL*.24]].forEach(([px,py])=>{ctx.fillStyle='#262434';ctx.beginPath();ctx.arc(px,py,TL*.1,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#4c4868';ctx.stroke();});
+        ctx.strokeStyle='rgba(170,160,210,.3)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-TL*.3,TL*.12,Math.PI*.2,Math.PI*.8);ctx.stroke();
         break;
       }
       case 'dragon_crest':{
@@ -1785,6 +2437,55 @@ function drawBossDecos(decos){
         ctx.strokeStyle=`rgba(180,138,40,${a*1.2})`;ctx.lineWidth=1.5;
         ctx.beginPath();ctx.moveTo(-TL*.5,-TL*.3);ctx.quadraticCurveTo(-TL*.9,TL*.2,-TL*.4,TL*.6);ctx.stroke();
         ctx.beginPath();ctx.moveTo( TL*.5,-TL*.3);ctx.quadraticCurveTo( TL*.9,TL*.2, TL*.4,TL*.6);ctx.stroke();
+        break;
+      }
+      case 'crystal_cluster':{
+        const col=d.col||'#7fd8ff';
+        ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(0,TL*.1,TL*.7,TL*.18,0,0,Math.PI*2);ctx.fill();
+        [[-TL*.5,.7,.5],[-TL*.15,1.15,.62],[TL*.25,.85,.46],[TL*.55,.6,.4],[0,.5,.36]].forEach(([px,hh,ww])=>{
+          const top=-TL*hh,w=TL*ww*.5;
+          const grd=ctx.createLinearGradient(px,top,px,0);grd.addColorStop(0,hexA(col,.85));grd.addColorStop(1,hexA(col,.32));
+          ctx.fillStyle=grd;ctx.shadowColor=col;ctx.shadowBlur=10;
+          ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px+w,-TL*.05);ctx.lineTo(px+w*.5,0);ctx.lineTo(px-w*.5,0);ctx.lineTo(px-w,-TL*.05);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+          ctx.fillStyle='rgba(255,255,255,.4)';ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px+w*.4,-TL*.1);ctx.lineTo(px,-TL*.02);ctx.closePath();ctx.fill();
+        });
+        const sp=Math.sin(G.t*2+d.wx)*.5+.5;
+        ctx.fillStyle=`rgba(255,255,255,${.3+sp*.4})`;ctx.beginPath();ctx.arc(-TL*.15,-TL*.9,1.6,0,Math.PI*2);ctx.fill();
+        break;
+      }
+      case 'collapsed_arch':{
+        const sc=d.col||'#2a2433';
+        ctx.fillStyle='rgba(0,0,0,.32)';ctx.beginPath();ctx.ellipse(0,TL*.12,TL*.95,TL*.22,0,0,Math.PI*2);ctx.fill();
+        const pil=(px,hgt)=>{
+          const g=ctx.createLinearGradient(px-TL*.2,0,px+TL*.2,0);g.addColorStop(0,sc);g.addColorStop(1,'#15111d');
+          ctx.fillStyle=g;ctx.fillRect(px-TL*.2,-hgt,TL*.4,hgt);
+          ctx.fillStyle='rgba(255,255,255,.06)';ctx.fillRect(px-TL*.2,-hgt,TL*.07,hgt);
+          ctx.fillStyle='#3a3346';ctx.fillRect(px-TL*.26,-hgt-TL*.08,TL*.52,TL*.1);
+          ctx.strokeStyle='rgba(0,0,0,.3)';ctx.lineWidth=1;for(let b=1;b<4;b++){const yy=-hgt*b/4;ctx.beginPath();ctx.moveTo(px-TL*.2,yy);ctx.lineTo(px+TL*.2,yy);ctx.stroke();}
+        };
+        pil(-TL*.6,TL*1.0);pil(TL*.6,TL*.62);
+        ctx.save();ctx.rotate(-.22);ctx.fillStyle='#241e30';ctx.fillRect(-TL*.55,-TL*1.05,TL*.8,TL*.22);ctx.fillStyle='rgba(255,255,255,.05)';ctx.fillRect(-TL*.55,-TL*1.05,TL*.8,TL*.06);ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=1;ctx.strokeRect(-TL*.55,-TL*1.05,TL*.8,TL*.22);ctx.restore();
+        ctx.fillStyle='#1b1724';for(let i=0;i<6;i++){const rx=(i-2.5)*TL*.26;ctx.fillRect(rx,TL*.02+((i*5)%3)*3,5+((i*3)%3),4);}
+        break;
+      }
+      case 'bone_mound':{
+        ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(0,TL*.18,TL*.6,TL*.16,0,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='rgba(206,200,182,.6)';ctx.lineWidth=3;ctx.lineCap='round';
+        ctx.beginPath();ctx.moveTo(-TL*.42,TL*.12);ctx.lineTo(TL*.42,-TL*.04);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(-TL*.42,-TL*.04);ctx.lineTo(TL*.42,TL*.12);ctx.stroke();ctx.lineCap='butt';
+        const skull=(sx,sy,r)=>{
+          ctx.fillStyle='rgba(212,206,188,.92)';ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();
+          ctx.fillStyle='rgba(180,174,156,.9)';ctx.fillRect(sx-r*.6,sy+r*.5,r*1.2,r*.5);
+          ctx.fillStyle='rgba(20,12,26,.85)';ctx.beginPath();ctx.arc(sx-r*.32,sy-r*.05,r*.22,0,Math.PI*2);ctx.arc(sx+r*.32,sy-r*.05,r*.22,0,Math.PI*2);ctx.fill();
+          ctx.beginPath();ctx.moveTo(sx,sy+r*.1);ctx.lineTo(sx-r*.14,sy+r*.4);ctx.lineTo(sx+r*.14,sy+r*.4);ctx.closePath();ctx.fill();
+        };
+        skull(-TL*.18,-TL*.02,TL*.16);skull(TL*.16,TL*.02,TL*.14);skull(0,-TL*.22,TL*.17);
+        break;
+      }
+      case 'frost_patch':{
+        ctx.fillStyle='rgba(190,225,248,.14)';ctx.beginPath();ctx.ellipse(0,0,TL*.5,TL*.38,0,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='rgba(220,240,255,.3)';ctx.lineWidth=1;
+        for(let i=0;i<6;i++){const a=i/6*Math.PI*2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*TL*.4,Math.sin(a)*TL*.3);ctx.stroke();}
         break;
       }
     }
@@ -2005,6 +2706,7 @@ function genLevel(realm,lvNum,isBoss){
     return{map,rooms,torches,spawners:[],switches:[],doors:[],items:[],
       playerStart:bossRoom.playerStart,stairsPos:null,
       boss:mkBoss(realm,bossRoom.bossWx,bossRoom.bossWy),
+      bossDoor:bossRoom.bossDoor,bossSpawn:bossRoom.bossSpawn,
       enemies:[],realm,isBoss:true,decos:bossRoom.decos};
   }
 
@@ -2100,6 +2802,11 @@ function genLevel(realm,lvNum,isBoss){
     r.entered=false;
     usedTypes.add(r.archetype);
   });
+  // Challenge crucibles should show up regularly — if none rolled, try to seed one into a big room
+  if(!usedTypes.has('crucible')){
+    const cz=shuffledMid.find(rm=>!rm.archetype&&rm.w>=7&&rm.h>=6);
+    if(cz&&Math.random()<0.55){cz.archetype='crucible';cz.entered=false;usedTypes.add('crucible');}
+  }
 
   // Spawners — prefer outer walls of rooms (70% bias to edge tiles)
   mrooms.forEach((r,ri)=>{
@@ -2137,18 +2844,18 @@ function genLevel(realm,lvNum,isBoss){
   if(Math.random()<.7){
     // Try the biggest non-archetype mid rooms first; build in the first that fits a vault
     const cands=mrooms.filter(rm=>!rm.archetype).sort((a,b)=>(b.w*b.h)-(a.w*a.h));
-    let vaultRoom=null,did=null;
-    for(const rm of cands){did=buildVault(map,rm,doors,items,realm);if(did){vaultRoom=rm;break;}}
+    let vaultRoom=null,did=null;const vaultTiles=new Set();
+    for(const rm of cands){did=buildVault(map,rm,doors,items,realm,vaultTiles);if(did){vaultRoom=rm;break;}}
     if(did){
       const swRooms=mrooms.filter(rm=>!rm.archetype&&rm!==vaultRoom);
       if(swRooms.length){
         // prefer the farther half of rooms so finding the switch is a small hunt
         swRooms.sort((a,b)=>(((b.cx-vaultRoom.cx)**2+(b.cy-vaultRoom.cy)**2)-((a.cx-vaultRoom.cx)**2+(a.cy-vaultRoom.cy)**2)));
         const pickFrom=swRooms.slice(0,Math.max(1,Math.ceil(swRooms.length/2)));
-        let ok=placeSwitchIn(map,pickFrom[rand(0,pickFrom.length-1)],switches,did);
-        if(!ok)ok=placeSwitchIn(map,vaultRoom,switches,did); // safety: never leave a door with no switch
+        let ok=placeSwitchIn(map,pickFrom[rand(0,pickFrom.length-1)],switches,did,vaultTiles);
+        if(!ok)ok=placeSwitchIn(map,vaultRoom,switches,did,vaultTiles); // safety: never leave a door with no switch
       } else {
-        placeSwitchIn(map,vaultRoom,switches,did);
+        placeSwitchIn(map,vaultRoom,switches,did,vaultTiles);
       }
     }
   }
@@ -2437,7 +3144,7 @@ function genLevel(realm,lvNum,isBoss){
 const BARREL_COLS={forsaken:'#2a1a0e',mountain:'#3a2810',castle:'#4a3520'};
 
 function genBarrels(map,rooms,realm,occ=new Set()){
-  const shape=realm.id==='forsaken'?'urn':realm.id==='mountain'?'crate':realm.id==='ice'?'iceblock':'chest';
+  const shape=realm.id==='forsaken'?'urn':realm.id==='mountain'?'crate':realm.id==='ice'?'iceblock':'arms';
   const barrels=[];
   rooms.forEach((r,ri)=>{
     if(ri===0||ri===rooms.length-1)return; // skip start room & exit room
@@ -2488,7 +3195,7 @@ function drawBarrels(){
       // ── FORSAKEN URN  — ceramic burial vessel, 3/4 top-down ──
 
       // Cast shadow on floor
-      ctx.fillStyle='rgba(0,0,0,.38)';
+      ctx.fillStyle='rgba(0,0,0,.34)';
       ctx.beginPath();ctx.ellipse(TL*.06,TL*.28,TL*.3,TL*.1,0,0,Math.PI*2);ctx.fill();
 
       // Body — radial gradient gives the round belly its volume
@@ -2535,7 +3242,7 @@ function drawBarrels(){
       const hw=TL*.28, th=TL*.13; // half-width, top-face visible height
 
       // Cast shadow
-      ctx.fillStyle='rgba(0,0,0,.32)';
+      ctx.fillStyle='rgba(0,0,0,.34)';
       ctx.beginPath();ctx.ellipse(TL*.08,hw+TL*.06,hw+TL*.05,TL*.07,0,0,Math.PI*2);ctx.fill();
 
       // Front face (darker) — fill from top-face bottom to base
@@ -2587,12 +3294,15 @@ function drawBarrels(){
     } else if(b.shape==='iceblock'){
       // ── FROSTLANDS ICE BLOCK — translucent faceted ice, faintly glowing ──
       const hw=TL*.3;
-      ctx.fillStyle='rgba(0,0,0,.3)';
+      ctx.fillStyle='rgba(0,0,0,.34)';
       ctx.beginPath();ctx.ellipse(TL*.06,hw+TL*.06,hw,TL*.08,0,0,Math.PI*2);ctx.fill();
       const ig=ctx.createLinearGradient(-hw,-hw,hw,hw);
       ig.addColorStop(0,'rgba(190,230,250,.92)');ig.addColorStop(.5,'rgba(120,180,220,.85)');ig.addColorStop(1,'rgba(70,120,165,.9)');
       ctx.fillStyle=ig;
       ctx.beginPath();ctx.moveTo(-hw,-hw*.7);ctx.lineTo(-hw*.6,-hw);ctx.lineTo(hw,-hw*.8);ctx.lineTo(hw*.8,hw);ctx.lineTo(-hw*.85,hw*.9);ctx.closePath();ctx.fill();
+      // upper-left lit facet plane — extra crystalline depth
+      ctx.fillStyle='rgba(225,245,255,.32)';
+      ctx.beginPath();ctx.moveTo(-hw*.6,-hw);ctx.lineTo(-hw,-hw*.7);ctx.lineTo(-hw*.2,-hw*.1);ctx.closePath();ctx.fill();
       // facet highlights
       ctx.strokeStyle='rgba(235,250,255,.7)';ctx.lineWidth=1.4;
       ctx.beginPath();ctx.moveTo(-hw*.6,-hw);ctx.lineTo(-hw*.2,-hw*.1);ctx.lineTo(hw*.8,hw);ctx.stroke();
@@ -2606,81 +3316,143 @@ function drawBarrels(){
       ctx.shadowBlur=0;
 
     } else {
-      ctx.fillStyle='#2a1e10';ctx.fillRect(-hw,-hh,hw*2,hh*1.6);
-      ctx.fillStyle='#1e1408';ctx.fillRect(-hw,-hh,hw*2,hh*.55); // lid
-      ctx.strokeStyle='#c8a030';ctx.lineWidth=1.5;
-      ctx.strokeRect(-hw,-hh,hw*2,hh*1.6);
-      ctx.strokeRect(-hw,-hh,hw*2,hh*.55);
-      // Hasp
-      ctx.fillStyle='#c8a030';ctx.beginPath();ctx.arc(0,-hh*.45,TL*.06,0,Math.PI*2);ctx.fill();
-      ctx.strokeStyle='rgba(200,160,48,.5)';ctx.lineWidth=1;
-      [-hw*.55,hw*.55].forEach(ox=>{
-        ctx.beginPath();ctx.moveTo(ox,-hh);ctx.lineTo(ox,hh*.5);ctx.stroke();
-      });
+      // ── STRONGHOLD ARMS PILE — heater shield over a crossed sword + axe ──
+
+      // Cast shadow
+      ctx.fillStyle='rgba(0,0,0,.34)';
+      ctx.beginPath();ctx.ellipse(TL*.04,TL*.26,TL*.34,TL*.1,0,0,Math.PI*2);ctx.fill();
+
+      // Sword (behind, angled left)
+      ctx.save();ctx.rotate(-.6);
+      const swg=ctx.createLinearGradient(0,-TL*.34,0,TL*.1);
+      swg.addColorStop(0,'#dfe4ea');swg.addColorStop(1,'#8a929c');
+      ctx.fillStyle=swg;
+      ctx.beginPath();ctx.moveTo(0,-TL*.36);ctx.lineTo(TL*.035,-TL*.32);ctx.lineTo(TL*.035,TL*.06);ctx.lineTo(-TL*.035,TL*.06);ctx.lineTo(-TL*.035,-TL*.32);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#5a3a1c';ctx.fillRect(-TL*.05,TL*.06,TL*.1,TL*.03);   // crossguard
+      ctx.fillRect(-TL*.018,TL*.09,TL*.036,TL*.1);                          // grip
+      ctx.fillStyle='#c8a030';ctx.beginPath();ctx.arc(0,TL*.2,TL*.028,0,Math.PI*2);ctx.fill(); // pommel
+      ctx.restore();
+
+      // Axe (behind, angled right)
+      ctx.save();ctx.rotate(.62);
+      ctx.fillStyle='#5a3a1c';ctx.fillRect(-TL*.022,-TL*.34,TL*.044,TL*.5);  // haft
+      const axg=ctx.createLinearGradient(0,-TL*.32,0,-TL*.16);
+      axg.addColorStop(0,'#cfd6dd');axg.addColorStop(1,'#7d858f');
+      ctx.fillStyle=axg;
+      ctx.beginPath();ctx.moveTo(TL*.02,-TL*.32);ctx.quadraticCurveTo(TL*.2,-TL*.3,TL*.16,-TL*.18);ctx.quadraticCurveTo(TL*.08,-TL*.2,TL*.02,-TL*.2);ctx.closePath();ctx.fill();
+      ctx.restore();
+
+      // Round heater shield on top
+      const shg=ctx.createRadialGradient(-TL*.08,-TL*.08,TL*.03,0,0,TL*.27);
+      shg.addColorStop(0,'#7a5836');shg.addColorStop(1,'#3c2812');
+      ctx.fillStyle=shg;ctx.beginPath();ctx.arc(0,0,TL*.25,0,Math.PI*2);ctx.fill();
+      // metal rim + sheen
+      ctx.strokeStyle='#9aa0a8';ctx.lineWidth=TL*.04;ctx.beginPath();ctx.arc(0,0,TL*.25,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='rgba(220,225,230,.5)';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(0,0,TL*.25,Math.PI*1.05,Math.PI*1.7);ctx.stroke();
+      // painted cross
+      ctx.strokeStyle='rgba(180,40,30,.8)';ctx.lineWidth=TL*.045;
+      ctx.beginPath();ctx.moveTo(0,-TL*.2);ctx.lineTo(0,TL*.2);ctx.moveTo(-TL*.2,0);ctx.lineTo(TL*.2,0);ctx.stroke();
+      // central boss (dome)
+      const bsg=ctx.createRadialGradient(-TL*.02,-TL*.02,TL*.01,0,0,TL*.07);
+      bsg.addColorStop(0,'#dfe4ea');bsg.addColorStop(1,'#6a727c');
+      ctx.fillStyle=bsg;ctx.beginPath();ctx.arc(0,0,TL*.07,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#4a525c';ctx.lineWidth=1;ctx.stroke();
     }
     ctx.restore();
   });
 }
 
 // Generates realm-themed prop decorations for regular (non-boss) dungeon rooms
+// Sprinkles torches onto narrow corridor walls so passages between rooms read as lit, lived-in space.
+function dressCorridors(map,torches){
+  const occ=new Set(torches.map(t=>t.x+','+t.y));
+  for(let ty=1;ty<MH-1;ty++)for(let tx=1;tx<MW-1;tx++){
+    if(map[ty][tx]!==TFLOOR)continue;
+    const wN=map[ty-1][tx]===TWALL,wS=map[ty+1][tx]===TWALL,wW=map[ty][tx-1]===TWALL,wE=map[ty][tx+1]===TWALL;
+    const horiz=wN&&wS&&!wW&&!wE, vert=wW&&wE&&!wN&&!wS;
+    if((!horiz&&!vert)||Math.random()>=.14)continue;
+    if(horiz){
+      const k=tx+','+(ty-1);
+      if(!occ.has(k)){torches.push({x:tx,y:ty-1,ph:Math.random()*Math.PI*2,wall:true});occ.add(k);}
+    } else {
+      const side=Math.random()<.5?tx-1:tx+1,k=side+','+ty;
+      if(map[ty][side]===TWALL&&!occ.has(k)){torches.push({x:side,y:ty,ph:Math.random()*Math.PI*2,wall:true,side:true});occ.add(k);}
+    }
+  }
+}
+
 function genRealmDecos(rooms,realm){
   const decos=[];
   rooms.forEach((r,ri)=>{
     if(ri===0||ri===rooms.length-1)return; // skip spawn room and exit room
     const cx=(r.x+r.w/2)*TL,cy=(r.y+r.h/2)*TL;
     const big=r.w>=5&&r.h>=5;
-    const rp=()=>({x:(r.x+rand(1,r.w-2)+.5)*TL,y:(r.y+rand(1,r.h-2)+.5)*TL});
+    const used=new Set();
+    const reserve=(tx,ty)=>used.add(tx+','+ty);
+    // Pick a free interior tile — not used and not adjacent to a used tile (keeps props from crowding)
+    const freeRp=()=>{
+      for(let t=0;t<14;t++){
+        const tx=r.x+rand(1,r.w-2),ty=r.y+rand(1,r.h-2);
+        let bad=false;
+        for(const [dx,dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) if(used.has((tx+dx)+','+(ty+dy))){bad=true;break;}
+        if(bad)continue;
+        used.add(tx+','+ty);
+        return {x:(tx+.5)*TL,y:(ty+.5)*TL};
+      }
+      return null;
+    };
+    let budget=big?4:2; // cap on scattered floor props per room — the main anti-overwhelm lever
+    const tryProp=(type,prob,extra)=>{
+      if(budget<=0||Math.random()>=prob)return;
+      const p=freeRp();if(!p)return;budget--;
+      decos.push(Object.assign({type,wx:p.x,wy:p.y},extra||{}));
+    };
+    const mid=r.x+(r.w>>1),midY=r.y+(r.h>>1);
 
     switch(realm.id){
       case 'forsaken':
-        if(big) decos.push({type:'rune_lich',wx:cx,wy:cy,scale:.38});
-        if(Math.random()<.65){const p=rp();decos.push({type:'bones',wx:p.x,wy:p.y});}
-        if(Math.random()<.55){const p=rp();decos.push({type:'gravestone',wx:p.x,wy:p.y});}
-        for(let tx=r.x+1;tx<r.x+r.w-1;tx+=4)
-          if(Math.random()<.45)decos.push({type:'cobweb',wx:(tx+.5)*TL,wy:(r.y+1+.5)*TL});
-        // New: chains on wall tiles, blood pools, hanging effigy
-        if(Math.random()<.5)decos.push({type:'chain_wall',wx:(r.x+1.5)*TL,wy:(r.y+rand(1,r.h-2)+.5)*TL});
-        if(Math.random()<.45){const p=rp();decos.push({type:'blood_pool',wx:p.x,wy:p.y});}
-        if(big&&Math.random()<.4)decos.push({type:'effigy',wx:(r.x+r.w-1.5)*TL,wy:(r.y+1.5)*TL});
+        // Fixed / edge features first (they reserve their tiles so props avoid them)
+        if(big){decos.push({type:'rune_lich',wx:cx,wy:cy,scale:.38});reserve(mid,midY);}
+        if(big&&Math.random()<.3){decos.push({type:'collapsed_arch',wx:(mid+.5)*TL,wy:(r.y+1.8)*TL,col:'#241b30'});reserve(mid,r.y+1);reserve(mid,r.y+2);}
+        if(big&&Math.random()<.35){decos.push({type:'effigy',wx:(r.x+r.w-1.5)*TL,wy:(r.y+1.5)*TL});reserve(r.x+r.w-2,r.y+1);}
+        if(Math.random()<.4){decos.push({type:'cobweb',wx:(r.x+1.5)*TL,wy:(r.y+1.5)*TL});reserve(r.x+1,r.y+1);}
+        if(Math.random()<.4){decos.push({type:'chain_wall',wx:(r.x+1.5)*TL,wy:(r.y+rand(2,r.h-2)+.5)*TL});}
+        // Scattered floor props (budget-limited, overlap-checked)
+        tryProp('bones',.55);tryProp('gravestone',.5);tryProp('blood_pool',.4);tryProp('bone_mound',.35);
         break;
 
       case 'mountain':
-        for(let tx=r.x+1;tx<r.x+r.w-1;tx+=2)
-          decos.push({type:'stalactite',wx:(tx+.5)*TL,wy:(r.y+1+.5)*TL});
-        for(let tx=r.x+1;tx<r.x+r.w-1;tx+=3)
-          if(Math.random()<.4)decos.push({type:'stalagmite',wx:(tx+.5)*TL,wy:(r.y+r.h-1.5)*TL});
-        if(Math.random()<.7){const p=rp();decos.push({type:'crystal_amber',wx:p.x,wy:p.y});}
-        if(Math.random()<.55){const p=rp();decos.push({type:'rock_pile',wx:p.x,wy:p.y});}
-        if(big)decos.push({type:'lava_glow',wx:cx,wy:cy,scale:.5});
-        if(big&&Math.random()<.4)decos.push({type:'mine_beam',wx:(r.x+2.5)*TL,wy:cy});
-        // New: ore veins on floor, water seep, cart tracks
-        if(Math.random()<.6){const p=rp();decos.push({type:'ore_vein',wx:p.x,wy:p.y});}
-        if(Math.random()<.5)decos.push({type:'water_seep',wx:(r.x+rand(1,r.w-2)+.5)*TL,wy:(r.y+r.h-2+.5)*TL});
-        if(big&&Math.random()<.45)decos.push({type:'cart_tracks',wx:cx,wy:cy,len:r.w-3});
+        for(let tx=r.x+2;tx<r.x+r.w-1;tx+=3) if(Math.random()<.55){decos.push({type:'stalactite',wx:(tx+.5)*TL,wy:(r.y+1+.5)*TL});}
+        for(let tx=r.x+2;tx<r.x+r.w-1;tx+=4) if(Math.random()<.4){decos.push({type:'stalagmite',wx:(tx+.5)*TL,wy:(r.y+r.h-1.5)*TL});}
+        if(big){decos.push({type:'lava_glow',wx:cx,wy:cy,scale:.5});reserve(mid,midY);}
+        if(big&&Math.random()<.35){decos.push({type:'mine_beam',wx:(r.x+2.5)*TL,wy:cy});reserve(r.x+2,midY);}
+        if(Math.random()<.45){decos.push({type:'water_seep',wx:(r.x+rand(1,r.w-2)+.5)*TL,wy:(r.y+r.h-2+.5)*TL});}
+        tryProp('crystal_amber',.55);tryProp('rock_pile',.5);tryProp('ore_vein',.45);
+        if(big)tryProp('crystal_cluster',.4,{col:'#ff9a3c'});
         break;
 
       case 'castle':
-        if(r.w>=4){
-          decos.push({type:'torch_fire',wx:(r.x+1.5)*TL,wy:cy,phase:ri*1.3});
-          decos.push({type:'torch_fire',wx:(r.x+r.w-1.5)*TL,wy:cy,phase:ri*1.3+1.6});
-        }
-        if(Math.random()<.6)decos.push({type:'banner',wx:(r.x+r.w-1.5)*TL,wy:cy,col:'#6a1818'});
-        if(r.h>=5)decos.push({type:'carpet',wx:cx,wy:cy,halfH:(r.h/2-1.5)*TL});
-        if(big)decos.push({type:'floor_diamond',wx:cx,wy:cy});
-        // New: column base, stained window, armor stand
-        if(r.w>=5){
-          decos.push({type:'column_base',wx:(r.x+1.5)*TL,wy:(r.y+1.5)*TL});
-          decos.push({type:'column_base',wx:(r.x+r.w-1.5)*TL,wy:(r.y+1.5)*TL});
-        }
-        if(big&&Math.random()<.5)decos.push({type:'window_shaft',wx:(r.x+r.w/2+.5)*TL,wy:(r.y+1.5)*TL});
-        if(Math.random()<.4){const p=rp();decos.push({type:'armor_stand',wx:p.x,wy:p.y});}
+        if(r.w>=4){decos.push({type:'torch_fire',wx:(r.x+1.5)*TL,wy:cy,phase:ri*1.3});decos.push({type:'torch_fire',wx:(r.x+r.w-1.5)*TL,wy:cy,phase:ri*1.3+1.6});}
+        if(r.h>=5){decos.push({type:'carpet',wx:cx,wy:cy,halfH:(r.h/2-1.5)*TL});for(let yy=r.y+2;yy<r.y+r.h-2;yy++)reserve(mid,yy);}
+        else if(big){decos.push({type:'floor_diamond',wx:cx,wy:cy});reserve(mid,midY);}
+        if(r.w>=5){decos.push({type:'column_base',wx:(r.x+1.5)*TL,wy:(r.y+1.5)*TL});decos.push({type:'column_base',wx:(r.x+r.w-1.5)*TL,wy:(r.y+1.5)*TL});reserve(r.x+1,r.y+1);reserve(r.x+r.w-2,r.y+1);}
+        if(Math.random()<.55){decos.push({type:'banner',wx:(r.x+r.w-1.5)*TL,wy:cy,col:'#6a1818'});}
+        if(big&&Math.random()<.5){decos.push({type:'window_shaft',wx:(mid+.5)*TL,wy:(r.y+1.5)*TL});reserve(mid,r.y+1);}
+        if(big&&Math.random()<.3){decos.push({type:'collapsed_arch',wx:(r.x+1.8)*TL,wy:(r.y+1.8)*TL,col:'#2a2440'});reserve(r.x+1,r.y+1);reserve(r.x+1,r.y+2);}
+        tryProp('armor_stand',.4);
+        break;
+
+      case 'ice':
+        if(big&&Math.random()<.35){decos.push({type:'collapsed_arch',wx:(mid+.5)*TL,wy:(r.y+1.8)*TL,col:'#1c2a38'});reserve(mid,r.y+1);}
+        tryProp('frost_patch',.6);tryProp('frost_patch',.5);
+        if(big)tryProp('crystal_cluster',.5,{col:'#7fd8ff'});
         break;
     }
   });
   return decos;
 }
 
-function buildVault(map,r,doors,items,realm){
+function buildVault(map,r,doors,items,realm,vaultTiles){
   // Seal a small 4×4 vault into room r — reward locked behind ONE door. Returns the door id
   // so the switch (placed elsewhere) can be linked to it. Reward stays unreachable until opened.
   const vw=4,vh=4;
@@ -2693,6 +3465,7 @@ function buildVault(map,r,doors,items,realm){
     if(xx<=0||xx>=MW-1||yy<=0||yy>=MH-1)continue;
     const edge=(xx===vx||xx===vx+vw-1||yy===vy||yy===vy+vh-1);
     map[yy][xx]=edge?TWALL:TFLOOR;
+    if(vaultTiles)vaultTiles.add(xx+','+yy); // whole footprint is off-limits to switch placement
   }
   const did='d'+Math.random().toString(36).slice(2,6);
   const doorY=vy+1;
@@ -2706,10 +3479,11 @@ function buildVault(map,r,doors,items,realm){
   items.push({type:'crystal',_puzzle:true,realm:realm.id,x:(vx+1+.5)*TL,y:(vy+2+.5)*TL,bob:Math.random()*Math.PI*2});
   return did;
 }
-function placeSwitchIn(map,r,switches,did){
+function placeSwitchIn(map,r,switches,did,vaultTiles){
   // Drop a pressure-plate switch on open floor in room r, linked to door id `did`
   for(let tries=0;tries<24;tries++){
     const sx=r.x+rand(1,r.w-2),sy=r.y+rand(1,r.h-2);
+    if(vaultTiles&&vaultTiles.has(sx+','+sy))continue; // never land the opener inside the sealed vault
     if(map[sy]&&map[sy][sx]===TFLOOR){switches.push({x:sx,y:sy,did,hit:false,ph:Math.random()*Math.PI*2});return true;}
   }
   return false;
@@ -2737,7 +3511,12 @@ function cfTile(map,x,y){if(x>0&&x<MW-1&&y>0&&y<MH-1&&map[y][x]===TWALL)map[y][x
 // ═══════════════════════════════════════
 function mkBoss(r,x,y){
   const bd=r.boss;
-  return{...bd,x,y,hp:bd.hp,maxHp:bd.hp,phase:1,state:'idle',
+  // Bosses scale with how many realm bosses you've already cleared (explore-any-order safe).
+  // The first boss is unscaled; later bosses ramp hard so they don't go trivial once geared.
+  const rp=G.progress?.rp; let n=0; if(rp)for(const k in rp){ if(rp[k]?.bossDown)n++; }
+  const hpS=1+n*0.28, atkS=1+n*0.14;
+  const hp=Math.floor(bd.hp*hpS), atk=Math.max(1,Math.floor(bd.atk*atkS));
+  return{...bd,x,y,hp,maxHp:hp,atk,phase:1,state:'idle',
     atkTimer:0,atkPat:0,vx:0,vy:0,hitFlash:0,active:false};
 }
 
@@ -2767,6 +3546,40 @@ const DRAGON_PATROL=[
   {x:(BOSS_BX+BOSS_BW/2+.5)*TL, y:(BOSS_BY+BOSS_BH/2+.5)*TL},
   {x:(BOSS_BX+BOSS_BW/2+.5)*TL, y:(BOSS_BY+BOSS_BH-4)*TL},
 ];
+
+// ── CHARGE TELEGRAPHS — a line that grows in the intended direction before a charge fires ──
+function addChargeTele(x,y,ang,len,dur,col){
+  (G.chargeTeles=G.chargeTeles||[]).push({x,y,ang,len,t:0,dur,col:col||'#ffffff'});
+}
+function updateChargeTeles(dt){
+  if(!G.chargeTeles)return;
+  for(let i=G.chargeTeles.length-1;i>=0;i--){if((G.chargeTeles[i].t+=dt)>=G.chargeTeles[i].dur)G.chargeTeles.splice(i,1);}
+}
+function drawChargeTeles(){
+  const hasArr=G.chargeTeles&&G.chargeTeles.length;
+  const p=G.p, lance=p&&p.hp>0&&p.turboChargeMax>0&&p.turboChargeType==='lance';
+  if(!hasArr&&!lance)return;
+  ctx.save();
+  const drawLine=(x,y,ang,len,col)=>{
+    if(len<2)return;
+    const pulse=.5+.5*Math.sin(G.t*22);
+    const ex=x+Math.cos(ang)*len, ey=y+Math.sin(ang)*len;
+    ctx.lineCap='round';
+    ctx.strokeStyle=hexA(col,.15+.12*pulse);ctx.lineWidth=TL*.5;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.strokeStyle=hexA(col,.6+.3*pulse);ctx.lineWidth=3;ctx.shadowColor=col;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.stroke();ctx.shadowBlur=0;
+    const ah=TL*.32;ctx.fillStyle=hexA(col,.7+.3*pulse);
+    ctx.beginPath();
+    ctx.moveTo(ex+Math.cos(ang)*ah,ey+Math.sin(ang)*ah);
+    ctx.lineTo(ex+Math.cos(ang+2.5)*ah*.7,ey+Math.sin(ang+2.5)*ah*.7);
+    ctx.lineTo(ex+Math.cos(ang-2.5)*ah*.7,ey+Math.sin(ang-2.5)*ah*.7);
+    ctx.closePath();ctx.fill();
+  };
+  if(hasArr)G.chargeTeles.forEach(ct=>drawLine(ct.x,ct.y,ct.ang,ct.len*Math.min(1,ct.t/ct.dur),ct.col));
+  if(lance){const cf=Math.min(1,p.turboCharge/p.turboChargeMax);drawLine(p.x,p.y,Math.atan2(p.facing.y,p.facing.x),TL*7*cf,'#ffffff');}
+  ctx.lineCap='butt';ctx.restore();
+}
 
 function updateBoss(dt){
   if(!G.lv)return;
@@ -2808,8 +3621,7 @@ function updateBoss(dt){
 // Phase-transition events tied to each arena
 function onBossPhase(b,phase){
   spawnP(b.x,b.y,b.col||'#ff3333',30);
-  const msgs=['','','grows stronger!','ENRAGES!','FINAL FORM!'];
-  showMsg(`⚠ ${b.name} ${msgs[phase]||''}`);
+  showMsg(`⚠ ${b.name} — Phase ${phase}`);
 
   const rid=G.curRealm?.id;
   if(rid==='forsaken'){
@@ -2900,6 +3712,8 @@ function updateLich(b,p,dt){
     markTimer:5.0,
     tetherTimer:0,
     tetherActive:false,
+    tpWarn:0,
+    tpDest:null,
   };
   const s=b.bossState;
   const d=dist(b,p);
@@ -2919,7 +3733,7 @@ function updateLich(b,p,dt){
     s.markTimer-=dt;
     if(s.markTimer<=0){
       s.markTimer=[0,5.5,4.5,3.5,2.5][b.phase];
-      addFT('MARK!',b.x,b.y-TL*b.sz*1.2,'#cc44ff');
+      
       addWarning(p.x,p.y,{delay:1.2,r:TL*1.3,atk:b.atk*1.2,col:'#7722cc',hazardDur:3.0});
     }
   }
@@ -2934,7 +3748,7 @@ function updateLich(b,p,dt){
         const nearSarcNow=SARC_POS.some(sp=>dist(p,sp)<TL*2.5);
         if(hasLOS(b.x,b.y,p.x,p.y)&&!nearSarcNow){
           s.tetherActive=true;s.tetherTimer=2.5;s.tetherGrace=1.0; // ~1s to react before it bites
-          addFT('SOUL TETHER!',b.x,b.y-TL*b.sz*1.5,'#ff44ff');
+          
         } else {
           s.tetherTimer=0.4; // not tetherable yet — check again soon
         }
@@ -2948,7 +3762,7 @@ function updateLich(b,p,dt){
         s.tetherGrace-=dt;
         if(broken){
           s.tetherActive=false;s.tetherTimer=[0,0,0,8,6][b.phase];G.lv.lichTether=null;
-          addFT('TETHER BROKEN!',p.x,p.y-22,'#66ff99');
+          
         } else {
           G.lv.lichTether={bx:b.x,by:b.y,px:p.x,py:p.y,broken:false,forming:true};
         }
@@ -2990,6 +3804,28 @@ function updateLich(b,p,dt){
     return;
   }
 
+  // TELEPORT TELEGRAPH — a sigil blooms at the destination, then the Lich blinks in
+  if(s.mode==='tpwarn'){
+    s.tpWarn-=dt;
+    if(G.lv.lichTpTele)G.lv.lichTpTele.t+=dt;
+    if(s.tpWarn<=0){
+      const dest=s.tpDest;
+      spawnP(b.x,b.y,'#9933cc',20);
+      b.x=dest.x;b.y=dest.y;b.vx=0;b.vy=0;
+      spawnP(b.x,b.y,'#cc66ff',24);
+      G.lv.lichTpTele=null;
+      setTimeout(()=>{
+        if(!G.lv?.boss)return;
+        const tg=nearestPlayer(b.x,b.y),d2=dist(b,tg);if(d2<1)return;
+        const dx2=(tg.x-b.x)/d2,dy2=(tg.y-b.y)/d2,ang2=Math.atan2(dy2,dx2);
+        const n=b.phase>=4?5:3;
+        for(let i=0;i<n;i++){const a=ang2+(i-(n-1)/2)*.35;fireBossProj(b,Math.cos(a),Math.sin(a),{col:'#cc66ff'});}
+      },300);
+      s.mode='cast';s.timer=[0,2.2,1.8,1.4,1.0][b.phase];
+    }
+    return;
+  }
+
   if(s.timer>0)return;
 
   // Pick next action
@@ -2999,24 +3835,16 @@ function updateLich(b,p,dt){
   const angle=Math.atan2(dy,dx);
 
   if(b.phase>=2&&roll<.28){
-    // TELEPORT to a cardinal point (open floor, never inside a pillar; avoids last one)
+    // TELEPORT — telegraph the destination with a blooming sigil, THEN blink in ('tpwarn')
     let idx;
     do{idx=rand(0,3);}while(idx===s.lastSarc);
     s.lastSarc=idx;
-    const dest=LICH_TP_POS[idx];
-    spawnP(b.x,b.y,'#9933cc',20);
-    b.x=dest.x;b.y=dest.y;b.vx=0;b.vy=0;
-    spawnP(b.x,b.y,'#cc66ff',20);
-    // After teleport, immediately fire aimed burst
-    setTimeout(()=>{
-      if(!G.lv?.boss)return;
-      const tg=nearestPlayer(b.x,b.y);
-      const d2=dist(b,tg);if(d2<1)return;
-      const dx2=(tg.x-b.x)/d2,dy2=(tg.y-b.y)/d2,ang2=Math.atan2(dy2,dx2);
-      const n=b.phase>=4?5:3;
-      for(let i=0;i<n;i++){const a=ang2+(i-(n-1)/2)*.35;fireBossProj(b,Math.cos(a),Math.sin(a),{col:'#cc66ff'});}
-    },350);
-    s.mode='cast';s.timer=[0,2.2,1.8,1.4,1.0][b.phase];
+    s.tpDest=LICH_TP_POS[idx];
+    s.tpWarn=0.55;
+    s.mode='tpwarn';
+    G.lv.lichTpTele={x:s.tpDest.x,y:s.tpDest.y,t:0,dur:0.55};
+    spawnP(b.x,b.y,'#9933cc',8); // faint shimmer where it's about to leave
+    return;
 
   } else if(roll<.55||(b.phase>=3&&roll<.7)){
     // DEATH RING — concentric expanding rings
@@ -3102,7 +3930,7 @@ function updateWyrm(b,p,dt){
     s.eruptTimer-=dt;
     if(s.eruptTimer<=0){
       // erupt under the player's current position — telegraphed, so keep moving
-      addFT('BURROW!',p.x,p.y-TL*2,'#cc8844');
+      
       addWarning(p.x,p.y,{delay:.6,r:TL*1.8,atk:b.atk*1.5,col:'#cc7733',hazardR:TL*1.8,hazardDur:.6});
       s.lastEX=p.x;s.lastEY=p.y; // remember where the last strike landed
       s.eruptCount--; s.eruptTimer=.62;
@@ -3145,13 +3973,13 @@ function updateWyrm(b,p,dt){
     }
     // ANY hit on the Wyrm interrupts the channel — land a shot through the maze gaps or reach it
     if(b.hp < (s.chanHp||b.hp) - 0.5){
-      addFT('INTERRUPTED!',b.x,b.y-TL*b.sz*1.5,'#66ff99');
+      
       b.hitFlash=.4; addShake(7);
       wyrmCollapseMaze(s); s.mode='recover'; s.timer=1.0; return;
     }
     if(s.channelTimer<=0){
       // PETRIFY — channel completed: heavy arena-wide slam (telegraphed), then collapse
-      addFT('PETRIFY!',b.x,b.y-TL*b.sz*1.6,'#ff5533');
+      
       const cx=(BOSS_BX+BOSS_BW/2)*TL, cy=(BOSS_BY+BOSS_BH/2)*TL;
       addWarning(cx,cy,{delay:1.2,r:TL*9,atk:b.atk*1.5,col:'#cc4422',hazardR:TL*9,hazardDur:.6});
       addShake(10);
@@ -3192,7 +4020,7 @@ function updateWyrm(b,p,dt){
     s.timer-=dt;
     if(s.timer<=0){
       s.mode='charge';
-      const angle=Math.atan2(p.y-b.y,p.x-b.x);
+      const angle=s.chargeAng!=null?s.chargeAng:Math.atan2(p.y-b.y,p.x-b.x);
       const spd=[0,340,400,470,560][b.phase];
       s.chargeVx=Math.cos(angle)*spd;s.chargeVy=Math.sin(angle)*spd;
       s.chargeTtl=[0,.65,.55,.48,.4][b.phase];
@@ -3225,10 +4053,12 @@ function updateWyrm(b,p,dt){
     const act=rotation[s.actIx%rotation.length]; s.actIx++;
     if(act==='charge'&&d>TL*2.5){
       s.mode='wind_up';s.timer=.45;spawnP(b.x,b.y,b.col||'#aa7744',12);
+      s.chargeAng=Math.atan2(p.y-b.y,p.x-b.x);
+      addChargeTele(b.x,b.y,s.chargeAng,TL*10,.45,'#ffcc66');
       s.timer=[0,4.0,3.4,2.8,2.2][b.phase];
     } else if(act==='burrow'){
       s.mode='burrow_dive';s.timer=.5;b._burrow=0;s.eruptCount=b.phase>=4?4:3;
-      addFT('THE WYRM BURROWS!',b.x,b.y-TL*b.sz*1.5,'#cc8844');s.timer2=0;
+      s.timer2=0;
     } else if(act==='labyrinth'){
       s.mode='lab_raise';s.timer=.7;
       b.x=24*TL;b.y=(BOSS_BY+BOSS_BH/2)*TL;b.vx=b.vy=0;
@@ -3236,7 +4066,7 @@ function updateWyrm(b,p,dt){
       const ex=11.5*TL, ey=(BOSS_BY+BOSS_BH/2)*TL;
       G.lv.wyrmMaze={tiles:s.mazeTiles.map(t=>[t[0],t[1]]),entrance:[ex,ey],boss:[b.x,b.y],epoch:G.lv._labEpoch,prog:0};
       wyrmTeleportToEntrance(ex,ey);
-      addFT('THE LABYRINTH!',b.x,b.y-TL*b.sz*1.6,'#ddaa44');addShake(8);
+      addShake(8);
     } else { s.timer=2.0; }
   }
 
@@ -3339,7 +4169,7 @@ function updateDragon(b,p,dt){
     s.strikeTimer-=dt;
     if(s.strikeTimer<=0){
       s.strikeTimer=[0,8.0,6.5,5.0,3.5][b.phase];
-      addFT('FLAME STRIKE!',b.x,b.y-TL*b.sz*1.5,'#ff5500');
+      
       const count=b.phase>=4?4:3;
       const positions=[{x:p.x,y:p.y}];
       for(let i=1;i<count;i++){
@@ -3362,7 +4192,7 @@ function updateDragon(b,p,dt){
     s.gustTimer-=dt;
     if(s.gustTimer<=0){
       s.gustTimer=[0,12,9,7,5][b.phase];
-      addFT('WING GUST!',b.x,b.y-TL*b.sz*1.5,'#ff8800');
+      
       // Flap tell: a gathering ring of embers + light shake, the burst lands shortly after
       addShake(3);
       const bx=b.x,by=b.y,kbSpd=b.phase>=4?420:300,tp=p;
@@ -3403,14 +4233,14 @@ function updateDragon(b,p,dt){
     if(b.phase>=2&&roll<.35){
       // FLAME WAVE — ignite rows of the floor, leaving safe gaps to stand in
       s.mode='flame_rain';s.timer=1.5;
-      addFT('FLAME WAVE!',b.x,b.y-TL*b.sz*1.6,'#ff5500');
+      
       dragonFlameRows(b);
     } else {
       // FIRE BREATH — telegraph wind-up, then rapid aimed cone
       s.mode='breath_wind';
       s.timer=0.45;
       s.pendingBreath=b.phase>=4?12:b.phase>=3?9:6;
-      addFT('FIRE BREATH!',b.x,b.y-TL*b.sz*1.5,'#ff6600');
+      
     }
     // Periodic ambient aimed shot while patrolling
   } else if(s.atkTimer<=0&&d>0){
@@ -3437,16 +4267,16 @@ function spawnIceWall(b){
   const blocks=[];
   let wall;
   if(horiz){
-    for(let ty=BOSS_BY+2;ty<BOSS_BY+BOSS_BH-2;ty++)blocks.push({i:ty,alive:true,hp:36,maxHp:36,hitFlash:0});
+    for(let ty=BOSS_BY+2;ty<BOSS_BY+BOSS_BH-2;ty++)blocks.push({i:ty,alive:true,hp:52,maxHp:52,hitFlash:0});
     const x0=dir>0?(BOSS_BX+1.5):(BOSS_BX+BOSS_BW-1.5);
     wall={axis:'x',dir,pos:x0*TL,blocks,speed:TL*2.6,atk:b.atk,life:12};
   } else {
-    for(let tx=BOSS_BX+2;tx<BOSS_BX+BOSS_BW-2;tx++)blocks.push({i:tx,alive:true,hp:36,maxHp:36,hitFlash:0});
+    for(let tx=BOSS_BX+2;tx<BOSS_BX+BOSS_BW-2;tx++)blocks.push({i:tx,alive:true,hp:52,maxHp:52,hitFlash:0});
     const y0=dir>0?(BOSS_BY+1.5):(BOSS_BY+BOSS_BH-1.5);
     wall={axis:'y',dir,pos:y0*TL,blocks,speed:TL*2.6,atk:b.atk,life:12};
   }
   G.lv.iceWall=wall;
-  addFT('ICE WALL!',b.x,b.y-TL*b.sz*1.5,'#9cd4ee');
+  
   addShake(3);
 }
 function iceShatter(w,blk){
@@ -3490,9 +4320,9 @@ function updateIceWall(dt){
       const perp=w.axis==='x'?Math.floor(pl.y/TL):Math.floor(pl.x/TL);
       const blk=w.blocks.find(bl=>bl.alive&&bl.i===perp);
       if(blk&&pl.invuln<=0){
-        if(w.axis==='x'){pl.kbVx=w.dir*300;pl.kbVy=0;}else{pl.kbVy=w.dir*300;pl.kbVx=0;}
-        pl.kbTimer=.18;
-        pl.hp-=w.atk*dt*4;
+        if(w.axis==='x'){pl.kbVx=w.dir*350;pl.kbVy=0;}else{pl.kbVy=w.dir*350;pl.kbVx=0;}
+        pl.kbTimer=.2;
+        pl.hp-=w.atk*dt*7;
         if(pl===G.p){G.hurtFlash=Math.min(1,G.hurtFlash+.35);pl._spikeSnd=(pl._spikeSnd||0)-dt;if(pl._spikeSnd<=0){try{SFX.playerHurt();}catch(e){}pl._spikeSnd=.4;}}
         if(pl.hp<=0)onDeath(pl);
       }
@@ -3533,6 +4363,12 @@ function drawIceWall(){
     // cracks as it weakens
     if(f<.66){ctx.strokeStyle='rgba(50,80,110,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-TL*.3,-TL*.2);ctx.lineTo(TL*.12,TL*.3);ctx.stroke();}
     if(f<.33){ctx.beginPath();ctx.moveTo(TL*.22,-TL*.32);ctx.lineTo(-TL*.1,TL*.12);ctx.stroke();}
+    // Leading-edge icicle spike jutting in the travel direction — the wall's teeth
+    ctx.fillStyle=`rgba(220,245,255,${.7+.25*f})`;ctx.shadowColor='#9cd4ee';ctx.shadowBlur=6;
+    ctx.beginPath();
+    if(w.axis==='x'){const s=w.dir*TL*.46;ctx.moveTo(s,-TL*.3);ctx.lineTo(s,TL*.3);ctx.lineTo(w.dir*TL*.92,0);}
+    else{const s=w.dir*TL*.46;ctx.moveTo(-TL*.3,s);ctx.lineTo(TL*.3,s);ctx.lineTo(0,w.dir*TL*.92);}
+    ctx.closePath();ctx.fill();ctx.shadowBlur=0;
     ctx.restore();
   });
   ctx.restore();
@@ -3596,7 +4432,7 @@ function updateRimewarden(b,p,dt){
   // ── BLIZZARD ambient (phase 4) — whiteout + blind shard spray ──
   if(b.phase>=4){
     s.blizzTimer-=dt;
-    if(s.blizzTimer<=0){s.blizzTimer=14;b._blizzard=4.5;addFT('BLIZZARD!',b.x,b.y-TL*b.sz*1.5,'#ffffff');addShake(4);}
+    if(s.blizzTimer<=0){s.blizzTimer=14;b._blizzard=4.5;addShake(4);}
   }
   if((b._blizzard||0)>0){
     b._blizzard-=dt;s._blizzShot=(s._blizzShot||0)-dt;
@@ -3625,21 +4461,37 @@ function updateRimewarden(b,p,dt){
   if(s.timer<=0){
     s.timer=nextTimer();
     const roll=Math.random();
-    if(b.phase>=3&&d>TL*3&&roll<.22){
+    if(b.phase>=3&&d>TL*3&&roll<.20){
       s.chargeDx=p.x-b.x;s.chargeDy=p.y-b.y;s.mode='charge_windup';s.timer=0.7;
-      addFT('CHARGE!',b.x,b.y-TL*b.sz*1.5,'#e8f4ff');return;
-    } else if(roll<.46){
+      addChargeTele(b.x,b.y,Math.atan2(s.chargeDy,s.chargeDx),TL*9,0.7,'#e8f4ff');
+      return;
+    } else if(roll<.38){
       s.mode='breath';s.breathWind=0.5;
       s.breathAng=Math.atan2(p.y-b.y,p.x-b.x);
-      addFT('FROST BREATH!',b.x,b.y-TL*b.sz*1.5,'#bfe8ff');return;
-    } else if(b.phase>=2&&roll<.66){
+      return;
+    } else if(b.phase>=2&&roll<.56){
+      // ICICLE STORM — telegraphed icicles rain across the arena (major damage + brief freeze)
+      
+      const cnt=b.phase>=4?11:b.phase>=3?9:7;
+      for(let i=0;i<cnt;i++){
+        const ix=(BOSS_BX+2+Math.random()*(BOSS_BW-4))*TL, iy=(BOSS_BY+2+Math.random()*(BOSS_BH-4))*TL;
+        const delay=0.5+Math.random()*0.85, fatk=Math.floor(b.atk*1.3);
+        addWarning(ix,iy,{delay,r:TL*1.05,atk:fatk,col:'#9fd8ff',hazardDur:0.25});
+        setTimeout(()=>{ if(!G.lv?.boss)return;
+          for(let k=0;k<9;k++)G.parts.push({x:ix+(Math.random()-.5)*TL,y:iy-TL*1.3,vx:0,vy:320+Math.random()*140,life:.26,ml:.26,sz:3+Math.random()*3,col:'#dff0ff'});
+          addShake(2);
+          eachPlayer(pl=>{ if(Math.hypot(pl.x-ix,pl.y-iy)<TL*1.0&&pl.invuln<=0){ pl.frozen=Math.max(pl.frozen||0,.6); if(pl===G.p){try{SFX.spike();}catch(e){}} } });
+        }, delay*1000);
+      }
+      addShake(4);
+    } else if(b.phase>=2&&roll<.70){
       // FREEZE RING — single, clearly telegraphed
-      addFT('FREEZE!',b.x,b.y-TL*b.sz*1.4,'#66ccff');
+      
       const cx=p.x,cy=p.y,fr=TL*2.1;
       for(let i=0;i<22;i++){const a=i/22*Math.PI*2;G.parts.push({x:cx+Math.cos(a)*fr*1.5,y:cy+Math.sin(a)*fr*1.5,vx:-Math.cos(a)*130,vy:-Math.sin(a)*130,life:.95,ml:.95,sz:4,col:'#aee0ff'});}
       addWarning(cx,cy,{delay:0.95,r:fr,atk:b.atk*.5,col:'#66ccff',hazardDur:0.3});
-      setTimeout(()=>{if(!G.lv?.boss)return;eachPlayer(pl=>{if(Math.hypot(pl.x-cx,pl.y-cy)<fr&&pl.invuln<=0){pl.frozen=Math.max(pl.frozen||0,b.phase>=4?1.3:1.0);if(pl===G.p){addFT('FROZEN!',pl.x,pl.y-TL,'#aee0ff');try{SFX.spike();}catch(e){}}for(let i=0;i<14;i++){const a=Math.random()*Math.PI*2;G.parts.push({x:pl.x,y:pl.y,vx:Math.cos(a)*90,vy:Math.sin(a)*90,life:.5,ml:.5,sz:4,col:'#cfeeff'});}}});},950);
-    } else if(roll<.83){
+      setTimeout(()=>{if(!G.lv?.boss)return;eachPlayer(pl=>{if(Math.hypot(pl.x-cx,pl.y-cy)<fr&&pl.invuln<=0){pl.frozen=Math.max(pl.frozen||0,b.phase>=4?1.3:1.0);if(pl===G.p){try{SFX.spike();}catch(e){}}for(let i=0;i<14;i++){const a=Math.random()*Math.PI*2;G.parts.push({x:pl.x,y:pl.y,vx:Math.cos(a)*90,vy:Math.sin(a)*90,life:.5,ml:.5,sz:4,col:'#cfeeff'});}}});},950);
+    } else if(roll<.86){
       // SWEEPING ICE WALL — focus a block down to open a gap and slip through
       if(!G.lv.iceWall) spawnIceWall(b);
       else { // a wall's already crossing — throw a shard volley instead
@@ -3915,7 +4767,7 @@ function bossComplete(bx,by){
     prog.bossDown=true;
     checkUnlocks();
   }
-  showMsg(`${r.boss.name} defeated! Collect the spoils!`);
+  showMsg(`${r.boss.name} defeated`);
 
   // Portal spawns at arena centre — scatter loot there, not at boss death pos
   const px=(BOSS_BX+BOSS_BW/2+.5)*TL,py=(BOSS_BY+BOSS_BH/2+.5)*TL;
@@ -3947,7 +4799,7 @@ function bossComplete(bx,by){
   setTimeout(()=>{
     if(!G.lv)return;
     G.lv.bossPortal={x:px,y:py};
-    addFT('✦ Portal opened ✦',px,py-TL*1.5,'#d4a853');
+    
     spawnP(px,py,'#d4a853',20);
   },1200);
 }
@@ -3959,7 +4811,6 @@ function checkUnlocks(){
       // Boneyard: the 5 hub crystals are the opening tutorial gate
       if(G.progress.hubCrystals.filter(Boolean).length>=r.unlockCost){
         G.progress.unlocked.push(r.id);
-        showMsg(`Boneyard is now accessible!`);
       }
     } else {
       // Every later realm unlocks by clearing the previous realm's boss (clear-to-advance,
@@ -3967,7 +4818,6 @@ function checkUnlocks(){
       const prev=REALMS[i-1];
       if(G.progress.rp[prev.id]?.bossDown){
         G.progress.unlocked.push(r.id);
-        showMsg(`${r.name} is now accessible!`);
       }
     }
   });
@@ -4178,7 +5028,7 @@ function effAtkCd(p,baseCd){return Math.max(baseCd*RATE_CDFLOOR, baseCd/(1+(p?.r
 const CRIT_PER_LUCK=0.02, CRIT_CAP=0.5, CRIT_MUL=1.8;
 function rollCrit(p){return Math.random()<Math.min(CRIT_CAP,(p?.luck||0)*CRIT_PER_LUCK);}
 function critFX(x,y){
-  addFT('CRIT!',x,y-TL*.45,'#ffe04a');
+  
   for(let i=0;i<7;i++){const a=Math.random()*Math.PI*2;
     G.parts.push({x,y,vx:Math.cos(a)*170,vy:Math.sin(a)*170,life:.22,ml:.22,sz:3,col:'#ffe04a'});}
 }
@@ -4226,17 +5076,18 @@ function famMagpiePull(pl,dt){
 const FAM_MAG_TYPES=new Set(['gold','crystal','food','powerup','key']);
 function updateFamiliars(dt){
   if(!G.lv)return;
-  // Local player: keep orbit fresh + fire the wisp (spawns a local proj like a normal shot,
-  // so damage + multiplayer sync ride the existing projectile path).
   const lp=G.p;
-  if(lp.familiar){famOrbit(lp,G.localIdx||0);if(lp.familiar==='wisp')famWispZap(lp,dt);}
+  // Orbit position is purely cosmetic (a function of player x,y and time), so compute it locally
+  // on EVERY machine for EVERY player. Previously this was host-gated, so on the client the host's
+  // familiar never updated its orbit and appeared to spawn at random stale positions.
+  let i=0;
+  (G.players||[]).forEach(pl=>{const idx=i++;if(pl&&pl.hp>0&&pl.familiar)famOrbit(pl,idx);});
+  // Local player: fire the wisp (spawns a local proj, rides existing projectile sync path)
+  if(lp.familiar==='wisp')famWispZap(lp,dt);
   // Host-authoritative boons (regen / pickup magnet) for every active player.
   if(!MP.enabled||MP.isHost){
-    let i=0;
     (G.players||[]).forEach(pl=>{
-      const idx=i++;
       if(!pl||pl.hp<=0||!pl.familiar)return;
-      if(pl!==lp)famOrbit(pl,idx);
       if(pl.familiar==='warden')pl.hp=Math.min(pl.maxHp,(pl.hp||0)+FAM_REGEN*dt);
       else if(pl.familiar==='magpie')famMagpiePull(pl,dt);
     });
@@ -4255,6 +5106,25 @@ function drawFamiliar(pl){
   ctx.globalAlpha=.85;ctx.fillStyle='#fff';
   ctx.beginPath();ctx.arc(x-1,y-1,1.3,0,Math.PI*2);ctx.fill();
   ctx.restore();
+}
+
+// Footstep dust + a faint speed-trail afterimage, driven purely off per-frame displacement.
+function playerMoveFx(p){
+  if(!p)return;
+  if(p._fxLX===undefined){p._fxLX=p.x;p._fxLY=p.y;p._fxAcc=0;return;}
+  const dx=p.x-p._fxLX,dy=p.y-p._fxLY,d=Math.hypot(dx,dy);
+  p._fxLX=p.x;p._fxLY=p.y;
+  const spd=d/(G.dt_last||.016);
+  p._fxAcc=(p._fxAcc||0)+d;
+  if(spd>40&&p._fxAcc>TL*.55){
+    p._fxAcc=0;const bx=-dx/(d||1),by=-dy/(d||1);
+    for(let i=0;i<2;i++)G.parts.push({x:p.x+bx*TL*.18+(Math.random()-.5)*6,y:p.y+TL*.28+(Math.random()-.5)*4,
+      vx:bx*30+(Math.random()-.5)*20,vy:-10-Math.random()*14,life:.22+Math.random()*.12,ml:.34,
+      sz:2+Math.random()*2.5,col:'rgba(150,140,120,.5)'});
+  }
+  if(spd>240&&Math.random()<.6){
+    G.parts.push({x:p.x,y:p.y+TL*.05,vx:0,vy:0,life:.14,ml:.14,sz:TL*.22,col:'rgba(150,175,255,.28)'});
+  }
 }
 
 function updatePlayer(dt){
@@ -4298,21 +5168,36 @@ function updatePlayer(dt){
   // Item timer decay
   if(p.item&&p.itemTimer>0){p.itemTimer-=dt;if(p.itemTimer<=0){p.item=null;showMsg('Item expired.');}}
 
-  // Spike tile damage — applies to ALL players (host authoritative)
+  // Spike tile damage — discrete "pierce": a punchy chunk + knockback eject when a raised spike catches you (host authoritative)
   if(MODE==='level'){
     eachPlayer(pl=>{
+      pl._spikeCd=Math.max(0,(pl._spikeCd||0)-dt);
       const tx=Math.floor(pl.x/TL),ty=Math.floor(pl.y/TL);
-      if(G.lv.map[ty]?.[tx]===TSPIKE&&pl.invuln<=0){
+      if(G.lv.map[ty]?.[tx]===TSPIKE&&pl.invuln<=0&&pl._spikeCd<=0){
         const sPhase=((tx*7+ty*13)%97)/97;
         const sUp=Math.sin((G.t/2.5+sPhase)*Math.PI*2)>0;
         if(sUp){
-          if(!MP.enabled||MP.isHost){pl.hp-=28*dt;if(pl.hp<=0)onDeath(pl);}
-          pl._spikeSnd=(pl._spikeSnd||0)-dt;
-          if(pl._spikeSnd<=0){
-            if(pl===G.p){SFX.spike();SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.4);}
-            pl._spikeSnd=.55;
+          const dmg=14+Math.floor((G.curLvNum||0)*1.5);
+          if(!MP.enabled||MP.isHost){pl.hp-=dmg;if(pl.hp<=0){onDeath(pl);return;}}
+          // Eject off the spike — shove away from the tile centre so you physically recoil out
+          const cxp=(tx+.5)*TL,cyp=(ty+.5)*TL;
+          let kx=pl.x-cxp,ky=pl.y-cyp;
+          if(Math.hypot(kx,ky)<TL*.12){const a=Math.random()*Math.PI*2;kx=Math.cos(a);ky=Math.sin(a);}
+          const kl=Math.hypot(kx,ky)||1;
+          pl.kbVx=(kx/kl)*300;pl.kbVy=(ky/kl)*300;pl.kbTimer=.18;
+          pl._spikeCd=.6;
+          if(pl===G.p){
+            SFX.spike();SFX.playerHurt();
+            addShake(7);G.hitStop=Math.max(G.hitStop,2);
+            G.hurtFlash=Math.min(1,G.hurtFlash+.55);
+            playerDamagedFrom(cxp,cyp);
+            addFT('-'+dmg,pl.x,pl.y-20,'#ff4444',{size:18,pop:1.2,vy:42,life:.7});
+            // Blood + metal-spark burst kicking upward from the wound
+            for(let i=0;i<11;i++){const a=-Math.PI/2+(Math.random()-.5)*1.8,s=80+Math.random()*130;
+              G.parts.push({x:pl.x,y:pl.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.28+Math.random()*.22,ml:.5,
+                sz:2+Math.random()*3,col:i%3===0?'#d8d8d8':'#aa1818'});}
           }
-        } else {pl._spikeSnd=0;}
+        }
       }
     });
   }
@@ -4324,10 +5209,17 @@ function updatePlayer(dt){
     eachPlayer(pl=>{if(dist(pl,bp)<TL*.65)onPortal=true;});
     if(onPortal){
       G.lv.bossPortalTimer=(G.lv.bossPortalTimer||0)+dt;
+      // Converging charge motes while channeling the exit (matches the level-exit feel)
+      if(Math.random()<.5){const a=Math.random()*Math.PI*2,r=TL*(1.6+Math.random()*1.5);
+        G.parts.push({x:bp.x+Math.cos(a)*r,y:bp.y+Math.sin(a)*r,vx:-Math.cos(a)*175,vy:-Math.sin(a)*175,
+          life:.32,ml:.32,sz:2+Math.random()*2.4,col:'#ffe98a'});}
       const prev=Math.ceil(3.5-(G.lv.bossPortalTimer-dt));
       const curr=Math.ceil(3.5-G.lv.bossPortalTimer);
       if(curr<prev&&curr>0)addFT(curr+'',bp.x,bp.y-TL*1.6,'#d4a853');
       if(G.lv.bossPortalTimer<3.5)return;
+      addShake(10);
+      for(let i=0;i<26;i++){const a=Math.random()*Math.PI*2,s=110+Math.random()*210;
+        G.parts.push({x:bp.x,y:bp.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.55,ml:.55,sz:3+Math.random()*3,col:'#ffe98a'});}
       G.lv.bossPortal=null;
       if(G.bossRush){bossRushAdvance();return;}
       const r=G.curRealm;
@@ -4464,6 +5356,10 @@ function updatePlayer(dt){
         if(p.turboChargeType==='lance'){doTurbo(p);p.magTimer=1.4;p.turbo=0;}
         else{doTurboAOE(p);p.magTimer=0.9;p.turbo=Math.max(0,p.turbo-(p.turboMax||100));}
       }finally{
+        // Tell the host we just consumed turbo so it can decrement its authoritative view of
+        // OUR turbo — otherwise the next snapshot overwrites the local reset and the bar
+        // appears stuck at max for client players.
+        if(MP.enabled&&!MP.isHost)MP._pendingTurboConsume=p.turboChargeType;
         p.turboCharge=0;p.turboChargeMax=0;p.turboChargeType=null;
       }
     }
@@ -4471,13 +5367,33 @@ function updatePlayer(dt){
   p._magWasDown=G.inp.mag;
   if(p.magTimer>0)p.magTimer-=dt;
   if(G.lv.enemies.length>0)p.turbo=Math.min(bp2,p.turbo+dt*.6*(MUT('fortune')?2:1));
+  // Turbo-ready flourish — fires once the instant the bar first crosses into usable
+  if(p===G.p){
+    const ready=p.turbo>=p.turboMax;
+    if(ready&&!p._turboWasReady){
+      try{SFX.powerup();}catch(e){}
+      addFT('TURBO READY',p.x,p.y-TL*1.1,'#ffd34d',{size:18,pop:1.4,vy:26,life:1});
+      for(let i=0;i<14;i++){const a=Math.random()*Math.PI*2,s=60+Math.random()*120;
+        G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.35,ml:.35,sz:2+Math.random()*3,col:'#ffe98a'});}
+    }
+    p._turboWasReady=ready;
+    // Tier 2 — the Lance/ultimate charge becomes available at the higher threshold
+    const ready2=p.turbo>=bp2;
+    if(ready2&&!p._turbo2WasReady){
+      try{SFX.powerup();}catch(e){}
+      addFT('TURBO MAX',p.x,p.y-TL*1.15,'#ffffff',{size:19,pop:1.5,vy:28,life:1.1});
+      for(let i=0;i<18;i++){const a=Math.random()*Math.PI*2,s=70+Math.random()*150;
+        G.parts.push({x:p.x,y:p.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.42,ml:.42,sz:2+Math.random()*3.5,col:'#ffffff'});}
+    }
+    p._turbo2WasReady=ready2;
+  }
   if(G._devMode)p.turbo=bp2;
 
   // Boss trigger — any player can wake the boss
   if(MODE==='boss'&&G.lv.boss&&!G.lv.boss.active&&(!MP.enabled||MP.isHost)){
     let anyClose=false;
     eachPlayer(pl=>{if(dist(pl,G.lv.boss)<TL*10)anyClose=true;});
-    if(anyClose){G.lv.boss.active=true;showMsg(G.lv.boss.name+' awakens!');}
+    if(anyClose){G.lv.boss.active=true;showMsg(G.lv.boss.name+' awakens!');sealBossGate();}
   }
 
   // ── ARCHETYPE ROOM ENTRY ACTIVATION — any player entering triggers ──
@@ -4516,10 +5432,19 @@ function updatePlayer(dt){
     eachPlayer(pl=>{if(dist(pl,{x:ex,y:ey})<TL*.7)onStairs=true;});
     if(onStairs){
       G.lv.exitTimer=(G.lv.exitTimer||0)+dt;
+      // Converging charge motes while channeling the exit
+      if(Math.random()<.5){const a=Math.random()*Math.PI*2,r=TL*(1.5+Math.random()*1.4);
+        G.parts.push({x:ex+Math.cos(a)*r,y:ey+Math.sin(a)*r,vx:-Math.cos(a)*170,vy:-Math.sin(a)*170,
+          life:.3,ml:.3,sz:2+Math.random()*2,col:'#ffe98a'});}
       const prev=Math.ceil(3.5-(G.lv.exitTimer-dt));
       const curr=Math.ceil(3.5-G.lv.exitTimer);
-      if(curr<prev&&curr>0)addFT(curr+'',ex,ey-TL*1.6,'#f5c542');
-      if(G.lv.exitTimer>=3.5){lvComplete();return;}
+      if(curr<prev&&curr>0){addFT(curr+'',ex,ey-TL*1.6,'#f5c542',{size:24,pop:1.4});addShake(2);}
+      if(G.lv.exitTimer>=3.5){
+        addShake(10);
+        for(let i=0;i<24;i++){const a=Math.random()*Math.PI*2,s=110+Math.random()*200;
+          G.parts.push({x:ex,y:ey,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.5,ml:.5,sz:3+Math.random()*3,col:'#ffe98a'});}
+        lvComplete();return;
+      }
     } else {
       if((G.lv.exitTimer||0)>0&&(G.lv.exitTimer||0)<3.5)G.lv.exitTimer=0;
     }
@@ -4560,11 +5485,12 @@ function updatePlayer(dt){
     if(!picker){if(item._keyMsg)item._keyMsg=false;return true;}
     if(item.type==='gold'){
       allPlayers.forEach(pl=>{pl.gold=(pl.gold||0)+item.val;});
-      addFT('+'+item.val+'g',item.x,item.y,'#f5c542');SFX.gold();
+      addFT('+'+item.val+'g',item.x,item.y,'#f5c542',{pop:.85,vy:38});spawnP(item.x,item.y,'#f5c542',5);SFX.gold();
     }
     else if(item.type==='crystal'){
       allPlayers.forEach(pl=>{pl.crystals=(pl.crystals||0)+1;});
-      addFT('+1 ✦',item.x,item.y,G.curRealm?.cc||'#cc88ff');
+      addFT('+1 ✦',item.x,item.y,G.curRealm?.cc||'#cc88ff',{pop:.95,vy:38,size:16});
+      spawnP(item.x,item.y,G.curRealm?.cc||'#cc88ff',6);
       SFX.crystal();
     }
     else if(item.type==='food'){
@@ -4589,7 +5515,7 @@ function updatePlayer(dt){
       } else {SFX.chest();pendingDrops.push(...openChest(item));}
       if(item._cursed&&G.curRealm){
         // The cache was cursed — an ambush erupts around whoever grabbed it
-        addShake(9);showMsg('A CURSE! YOU ARE NOT ALONE...');
+        addShake(9);showMsg('Cursed cache — ambush!');
         const n=3+Math.floor((G.curLvNum||0)/2);
         for(let i=0;i<n;i++){
           const a=Math.random()*Math.PI*2,d=TL*(1.6+Math.random()*1.4);
@@ -4617,7 +5543,12 @@ function updatePlayer(dt){
 }
 
 function openChest(ch){
-  spawnP(ch.x,ch.y,'#c8a030',14);addFT('OPENED!',ch.x,ch.y-TL*.6,'#f5c542');
+  spawnP(ch.x,ch.y,'#c8a030',14);
+  addShake(5);G.hitStop=Math.max(G.hitStop,1);
+  // Gold fountain — coins erupt upward out of the lid
+  for(let i=0;i<22;i++){const a=-Math.PI/2+(Math.random()-.5)*1.5,s=120+Math.random()*180;
+    G.parts.push({x:ch.x,y:ch.y-TL*.1,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.5+Math.random()*.4,ml:.9,
+      sz:2+Math.random()*3,col:Math.random()<.5?'#ffe98a':'#f5c542'});}
   const sc=()=>({x:ch.x+(Math.random()-.5)*TL*.8,y:ch.y+(Math.random()-.5)*TL*.8,bob:Math.random()*Math.PI*2});
   const POWERUPS=['triple_shot','rapid_fire','fury','barrier'];
   const drops=[];
@@ -4714,6 +5645,19 @@ function fireProj(p){
   const baseCd=p.item==='rapid_fire'?(ATKCD*.45):ATKCD;
   const atkCd=effAtkCd(p,baseCd);
   p.atkTimer=atkCd;
+  // Firing weight: camera recoil + a class-tinted muzzle flash (aim computed once).
+  {
+    const _aim=getAimDir(p);
+    if(p===G.p){
+      const _k=({dwarf:3,wizard:2.4,knight:1.6,jester:1.8}[p.charClass]||2)*(p.item==='rapid_fire'?.5:1);
+      G.camKickX=-_aim.dx*_k;G.camKickY=-_aim.dy*_k;
+    }
+    const _mx=p.x+_aim.dx*TL*.45,_my=p.y+_aim.dy*TL*.45;
+    const _mc={wizard:'#cc88ff',dwarf:'#ffd9a0',knight:'#cfe0ff',jester:'#b6ff9c'}[p.charClass]||'#bfe0ff';
+    const _ms={dwarf:1.5,wizard:1.3}[p.charClass]||1;
+    G.parts.push({x:_mx,y:_my,vx:_aim.dx*40,vy:_aim.dy*40,life:.07,ml:.07,sz:13*_ms,col:'#ffffff'});
+    G.parts.push({x:_mx,y:_my,vx:_aim.dx*30,vy:_aim.dy*30,life:.12,ml:.12,sz:9*_ms,col:_mc});
+  }
   const crit=rollCrit(p), critMul=crit?CRIT_MUL:1;
   // Jester throws bombs instead of arrows. Items still apply:
   //   • fury → 1.8× bomb damage (matches knight/wizard fury bonus)
@@ -5308,6 +6252,7 @@ function doTurbo(p){
 // ═══════════════════════════════════════
 function updateProjs(dt){
   const p=G.p;
+  const _beforeProjs=G.projs;
   G.projs=G.projs.filter(pr=>{
     // Display-only projs synced FROM host (rendered on client) skip collision.
     // _remoteId projs are client attacks landing on host — host MUST process collision.
@@ -5398,7 +6343,7 @@ function updateProjs(dt){
         const _pd=Math.floor(dmgToPlayer(pl,pr.atk));
         pl.hp-=_pd;pl.invuln=.65;
         if(pl===G.p){
-          addShake(4);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.55);G.hitStop=2;
+          addShake(4);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.55);G.hitStop=2;playerDamagedFrom(pr.x,pr.y);
         }
         addFT('-'+_pd,pl.x,pl.y-20,'#ff4444');spawnP(pl.x,pl.y,'#cc2222',5);
         if(pl.hp<=0)onDeath(pl);
@@ -5459,9 +6404,25 @@ function updateProjs(dt){
       for(const e of G.lv.enemies){
         if(dist(pr,e)<TL*.5){spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;}
       }
+      // Boss: client must destroy its own projectile on visual contact so it stops re-sending
+      // the same proj every input cycle. Defense-in-depth on top of the host's ID-based dedup.
+      if(G.lv.boss?.active&&dist(pr,G.lv.boss)<TL*G.lv.boss.sz*.85){
+        spawnImpact(pr.x,pr.y,pr.col,pr.vx,pr.vy);return false;
+      }
     }
     return true;
   });
+  // Host: record IDs of remote projs destroyed this tick so we never re-spawn them when the
+  // client (still seeing them in flight) sends them again next input cycle.
+  if(!MP.enabled||MP.isHost){
+    const aliveSet=new Set(G.projs);
+    _beforeProjs.forEach(pr=>{
+      if(aliveSet.has(pr))return;
+      if(!pr._remoteId||!pr._projId)return;
+      const ri=MP.remoteInputs&&MP.remoteInputs[pr._remoteId];
+      if(ri)(ri._killedProjIds=ri._killedProjIds||new Set()).add(pr._projId);
+    });
+  }
 }
 
 // ═══════════════════════════════════════
@@ -5524,6 +6485,12 @@ function sealRoom(r,cr){
   cr.sealTiles=[];const m=G.lv.map,ring=[];
   for(let x=r.x-1;x<=r.x+r.w;x++){ring.push([x,r.y-1]);ring.push([x,r.y+r.h]);}
   for(let y=r.y;y<r.y+r.h;y++){ring.push([r.x-1,y]);ring.push([r.x+r.w,y]);}
+  // Don't trap anyone inside a sealing tile — pull players on the ring into the room interior first
+  const ringSet=new Set(ring.map(([x,y])=>x+','+y));
+  eachPlayer(pl=>{
+    const ptx=Math.floor(pl.x/TL),pty=Math.floor(pl.y/TL);
+    if(ringSet.has(ptx+','+pty)){pl.x=(r.x+r.w/2)*TL;pl.y=(r.y+r.h/2)*TL;pl.kbTimer=0;pl.kbVx=0;pl.kbVy=0;}
+  });
   ring.forEach(([x,y])=>{if(m[y]&&m[y][x]===TFLOOR){m[y][x]=TDOOR;cr.sealTiles.push([x,y]);(G._mpMapUpd=G._mpMapUpd||[]).push([x,y,TDOOR]);}});
 }
 function unsealRoom(r,cr){
@@ -5559,10 +6526,10 @@ function updateArchetypes(dt){
   G.lv.rooms.forEach(r=>{
     if(r.crucible){
       const cr=r.crucible;
-      if(cr.state==='start'){sealRoom(r,cr);spawnCrucibleWave(r,cr);cr.state='active';addShake(8);showMsg('THE ROOM SEALS — SURVIVE!');}
+      if(cr.state==='start'){sealRoom(r,cr);spawnCrucibleWave(r,cr);cr.state='active';addShake(8);showMsg('Room sealed');}
       else if(cr.state==='active'&&countEnemiesIn(r)===0){
         if(cr.wave<cr.waves){spawnCrucibleWave(r,cr);showMsg('WAVE '+cr.wave+' / '+cr.waves);}
-        else{unsealRoom(r,cr);cr.state='done';showMsg('THE WAY OPENS!');dropCrucibleReward(r);addShake(6);}
+        else{unsealRoom(r,cr);cr.state='done';showMsg('Room cleared');dropCrucibleReward(r);addShake(6);}
       }
     }
     if(r.inferno&&r.inferno.active){
@@ -6318,6 +7285,12 @@ function mpHandleMessage(d){
       ri.lastPing=Date.now();
       ri.keys=d.keys||{};ri.mousePos=d.mousePos||ri.mousePos;ri.mouseBtn=d.mouseBtn||false;
       const rp=G.players[ri.playerIdx];
+      // Client fired their turbo locally — host decrements its authoritative view to match,
+      // so the next snapshot doesn't overwrite the client's reset back to max.
+      if(rp&&d.consumeTurbo){
+        if(d.consumeTurbo==='lance')rp.turbo=0;
+        else rp.turbo=Math.max(0,(rp.turbo||0)-(rp.turboMax||100));
+      }
       if(rp&&d.px){
         if(rp._tx===undefined){rp.x=d.px;rp.y=d.py;}
         rp._tx=d.px;rp._ty=d.py; // interpRemotes() chases this every frame
@@ -6355,15 +7328,26 @@ function mpHandleMessage(d){
       }
       // Replace client projs in host render pool each input (no ghost accumulation)
       if(d.projs){
-        // Per-client filter — only remove THIS client's old projs, leave others alone
-        G.projs=G.projs.filter(p=>p._remoteId!==d.playerId);
-        d.projs.forEach(p=>G.projs.push({
-          ...p,life:p.isTurbo?5:0.5,maxLife:p.isTurbo?5:0.5,trail:[],_remoteId:d.playerId,
-        }));
-        const newCount=d.projs.length;
-        const prevCount=ri._lastProjCount||0;
-        if(newCount>prevCount&&rp){SFX.atPos(rp.x,rp.y);SFX.shoot(false,rp.charClass);}
-        ri._lastProjCount=newCount;
+        // ID-aware merge — projectiles destroyed on the host stay destroyed even if the client
+        // keeps re-sending them in subsequent input cycles. Without this, a wizard bolt
+        // flying past a boss would be re-spawned every 50ms and hit the boss repeatedly.
+        ri._killedProjIds=ri._killedProjIds||new Set();
+        const incomingIds=new Set();
+        d.projs.forEach(p=>{if(p._projId)incomingIds.add(p._projId);});
+        // Drop host projs whose IDs the client no longer reports (client side death)
+        G.projs=G.projs.filter(p=>p._remoteId!==d.playerId||!p._projId||incomingIds.has(p._projId));
+        const aliveById=new Map(G.projs.filter(p=>p._remoteId===d.playerId&&p._projId).map(p=>[p._projId,p]));
+        let added=0;
+        d.projs.forEach(p=>{
+          if(p._projId&&ri._killedProjIds.has(p._projId))return; // already destroyed on host
+          const existing=p._projId&&aliveById.get(p._projId);
+          if(existing){existing.x=p.x;existing.y=p.y;existing.vx=p.vx;existing.vy=p.vy;return;}
+          G.projs.push({...p,life:p.isTurbo?5:0.5,maxLife:p.isTurbo?5:0.5,trail:[],_remoteId:d.playerId});
+          added++;
+        });
+        if(added>0&&rp){SFX.atPos(rp.x,rp.y);SFX.shoot(false,rp.charClass);}
+        // Bound the killed-set so it doesn't grow forever in long sessions
+        if(ri._killedProjIds.size>400)ri._killedProjIds=new Set([...ri._killedProjIds].slice(-200));
       }
     }
   } else {
@@ -6428,6 +7412,7 @@ function mpSendInput(){
   const throttle=G.players.length>=4?85:G.players.length>=3?65:50;
   if(now-(MP._lastInputSend||0)<throttle)return;
   MP._lastInputSend=now;
+  const consumeTurbo=MP._pendingTurboConsume||null;MP._pendingTurboConsume=null;
   mpSend({type:'input',playerId:MP.playerId,
     keys:{...keys},mousePos:{...mousePos},mouseBtn,
     px:Math.round(G.p.x),py:Math.round(G.p.y),
@@ -6436,20 +7421,28 @@ function mpSendInput(){
     attacking:G.p.attacking||false,
     atkProg:G.p.atkProg||0,
     atkAngle:G.p.atkAngle||0,
+    consumeTurbo,
     charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,
     playerMode:MODE,
     atk:G.p.atk||18,maxHp:G.p.maxHp||100,rate:G.p.rate||0,luck:G.p.luck||0,familiar:G.p.familiar||null,
-    projs:G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
-      x:Math.round(pr.x),y:Math.round(pr.y),
-      vx:Math.round(pr.vx),vy:Math.round(pr.vy),
-      col:pr.col,sz:pr.sz||4,atk:pr.atk||G.p.atk||18,
-      isTurbo:!!pr.isTurbo,isLob:!!pr.isLob,
-      lobR:pr.lobR,lobCol:pr.lobCol,lobAtk:pr.lobAtk,
-      _wizard:pr._wizard||0,
-      _jesterBomb:pr._jesterBomb||0,
-      _hammer:pr._hammer||0,
-      _blade:pr._blade||0,
-    })),
+    projs:(function(){
+      // Stable identity so the host doesn't re-add a projectile it already destroyed.
+      // Without this, a client proj alive on the client (e.g. flying past a boss) is re-sent
+      // every input cycle and re-spawned on the host, hitting the boss repeatedly.
+      G.projs.forEach(p=>{if(p._local&&!p._projId){MP._projCounter=(MP._projCounter||0)+1;p._projId=(MP.playerId||'p').slice(0,4)+'_'+MP._projCounter;}});
+      return G.projs.filter(p=>p._local).slice(0,20).map(pr=>({
+        _projId:pr._projId,
+        x:Math.round(pr.x),y:Math.round(pr.y),
+        vx:Math.round(pr.vx),vy:Math.round(pr.vy),
+        col:pr.col,sz:pr.sz||4,atk:pr.atk||G.p.atk||18,
+        isTurbo:!!pr.isTurbo,isLob:!!pr.isLob,
+        lobR:pr.lobR,lobCol:pr.lobCol,lobAtk:pr.lobAtk,
+        _wizard:pr._wizard||0,
+        _jesterBomb:pr._jesterBomb||0,
+        _hammer:pr._hammer||0,
+        _blade:pr._blade||0,
+      }));
+    })(),
   });
   MP._wasMouseBtn=mouseBtn;
 }
@@ -6554,6 +7547,7 @@ function mpBroadcastState(){
   if(G.lv?.warnings?.length)payload.warns=G.lv.warnings.map(w=>[Math.round(w.x),Math.round(w.y),+w.timer.toFixed(2),+w.maxTimer.toFixed(2),Math.round(w.r),w.col,w.band?1:0,Math.round(w.bandW||0),Math.round(w.bandH||0),w.cone?1:0,+(w.coneAng||0).toFixed(2),+(w.coneHalf||0).toFixed(2)]);
   if(G.lv?.hazards?.length)payload.hzds=G.lv.hazards.map(h=>[Math.round(h.x),Math.round(h.y),Math.round(h.r),+h.timer.toFixed(2),+(h.maxTimer||h.timer).toFixed(2),h.col||'#ff6600',h.band?1:0,Math.round(h.bandW||0),Math.round(h.bandH||0),h.cone?1:0,+(h.coneAng||0).toFixed(2),+(h.coneHalf||0).toFixed(2)]);
   if(G.lv?.lichTether)payload.tether=[Math.round(G.lv.lichTether.bx),Math.round(G.lv.lichTether.by),Math.round(G.lv.lichTether.px),Math.round(G.lv.lichTether.py),G.lv.lichTether.broken?1:0,G.lv.lichTether.forming?1:0];
+  if(G.lv?.lichTpTele)payload.tpTele=[Math.round(G.lv.lichTpTele.x),Math.round(G.lv.lichTpTele.y),+(G.lv.lichTpTele.t||0).toFixed(2),+(G.lv.lichTpTele.dur||0.55).toFixed(2)];
   if(G.lv?.bossPortal)payload.bp=[Math.round(G.lv.bossPortal.x),Math.round(G.lv.bossPortal.y),+(G.lv.bossPortalTimer||0).toFixed(2)];
   // In boss mode, always include boss field (null or object) so client cleans up after death
   if(MODE==='boss'){
@@ -6656,6 +7650,11 @@ function mpApplyState(data){
     } else if(MODE==='boss'&&G.lv.lichTether){
       // Tether wasn't broadcast — clear it (host says it's gone)
       G.lv.lichTether=null;
+    }
+    if('tpTele' in data){
+      G.lv.lichTpTele=data.tpTele?{x:data.tpTele[0],y:data.tpTele[1],t:data.tpTele[2],dur:data.tpTele[3]}:null;
+    } else if(MODE==='boss'&&G.lv.lichTpTele){
+      G.lv.lichTpTele=null;
     }
     // Wyrm labyrinth — apply raised walls to the local map, teleport self to entrance on a new maze
     if(data.wmaze){
@@ -6838,10 +7837,19 @@ function mpApplyState(data){
   if(!MP.isHost&&data.items&&G.lv?.items){
     const oldMap=new Map(G.lv.items.map(it=>[`${it.type}:${it.x}:${it.y}`,it]));
     const newKeys=new Set(data.items.map(a=>`${a[0]}:${a[1]}:${a[2]}`));
-    // Detect items that disappeared this frame → play pickup feedback for each type
+    // Detect items that disappeared this frame → play pickup feedback for each type.
+    // Items can MOVE (e.g. magpie pulls them toward the player), which changes their position key,
+    // so a key going "missing" doesn't mean it was picked up. Use type COUNTS to only fire
+    // feedback as many times as items of that type actually decreased.
+    const typeCountOld={},typeCountNew={};
+    oldMap.forEach(it=>{typeCountOld[it.type]=(typeCountOld[it.type]||0)+1;});
+    data.items.forEach(a=>{typeCountNew[a[0]]=(typeCountNew[a[0]]||0)+1;});
+    const remaining={}; // pickups still to attribute, per type
+    Object.keys(typeCountOld).forEach(t=>{remaining[t]=Math.max(0,(typeCountOld[t]||0)-(typeCountNew[t]||0));});
     oldMap.forEach((it,key)=>{
       if(newKeys.has(key))return;
-      // Item picked up by some player — play sound and burst at its position (spatial volume)
+      if(!remaining[it.type])return; // it just moved, not picked up
+      remaining[it.type]--;
       switch(it.type){
         case 'gold':if(SFX.gold){SFX.atPos(it.x,it.y);SFX.gold();}addFT('+'+(it.val||0)+'g',it.x,it.y,'#f5c542');break;
         case 'crystal':if(SFX.crystal){SFX.atPos(it.x,it.y);SFX.crystal();}addFT('+1 ✦',it.x,it.y,'#cc88ff');break;
@@ -7019,7 +8027,7 @@ function updateAmbientParticles(dt){
   if(!G.ambientParts)G.ambientParts=[];
   const r=G.curRealm.id;
   const cam=G.cam;
-  const maxP=35;
+  const maxP=55;
   // Spawn
   if(G.ambientParts.length<maxP&&Math.random()<.4){
     const vx=cv.width+TL*4,vy=cv.height+TL*4;
@@ -7355,7 +8363,7 @@ function updateEnemies(dt){
           if(e.atkTimer<=0&&d<TL*1.4&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
             e.atkTimer=EACD*1.2;
             {const _gd=Math.floor(dmgToPlayer(p,e.atk));p.hp-=_gd;p.invuln=.9;
-            if(p===G.p){addShake(7);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.85);}
+            if(p===G.p){addShake(7);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.85);playerDamagedFrom(e.x,e.y);}
             const kbSpd=320;
             p.kbVx=ddx*kbSpd;p.kbVy=ddy*kbSpd;p.kbTimer=.18;
             addFT('-'+_gd,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',8);}
@@ -7372,7 +8380,7 @@ function updateEnemies(dt){
           if(d<TL*3.2&&p.invuln<=0&&hasLOS(e.x,e.y,p.x,p.y)){
             const dmg=Math.floor(dmgToPlayer(p,e.atk*.55));p.hp-=dmg;p.invuln=.5;
             if(p===G.p){addShake(6);SFX.playerHurt();}
-            addFT('STOMP! -'+dmg,p.x,p.y-20,'#ff6600');if(p.hp<=0)onDeath(p);
+            addFT('-'+dmg,p.x,p.y-20,'#ff6600');if(p.hp<=0)onDeath(p);
           }
           // Stomp also knocks back and damages nearby enemies — golem doesn't pick sides
           G.lv.enemies.forEach(other=>{
@@ -7418,7 +8426,7 @@ function updateEnemies(dt){
             p.kbVx=Math.cos(kbAng)*(isHeavy?220:150);
             p.kbVy=Math.sin(kbAng)*(isHeavy?220:150);
             p.kbTimer=.22;
-            if(p===G.p){addShake(isHeavy?6:3);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.65);}
+            if(p===G.p){addShake(isHeavy?6:3);SFX.playerHurt();G.hurtFlash=Math.min(1,G.hurtFlash+.65);playerDamagedFrom(e.x,e.y);}
             addFT('-'+_ld,p.x,p.y-20,'#ff4444');spawnP(p.x,p.y,'#cc2222',5);}
             if(p.hp<=0)onDeath(p);
           }
@@ -7490,7 +8498,7 @@ function explodeSuicideBomber(e){
     const dmg=Math.floor(dmgToPlayer(pl,e.atk*1.3*falloff));
     pl.hp-=dmg;pl.invuln=1.0;
     if(pl===G.p){addShake(10);G.hurtFlash=1.0;}
-    addFT('-'+dmg+' BOOM!',pl.x,pl.y-20,'#ff6600');
+    addFT('-'+dmg,pl.x,pl.y-20,'#ff6600');
     if(pl.hp<=0)onDeath(pl);
   });
   // Damage + knock back nearby enemies — same falloff
@@ -7593,7 +8601,14 @@ function hitEnemy(e,dmg){
   if(MUT('glass'))dmg=Math.floor(dmg*1.6); // GLASS mutator — everyone hits harder
   const prevHp=e.hp;
   e.hp-=dmg;e.hitFlash=.15;e.state='chase';
-  spawnP(e.x,e.y,e.out||'#888',4);
+  // Directional impact sparks — spray away from the attacker along the hit vector
+  {const dx=e.x-G.p.x,dy=e.y-G.p.y,dl=Math.hypot(dx,dy)||1,ux=dx/dl,uy=dy/dl;
+   for(let i=0;i<5;i++){const sp=70+Math.random()*120,sa=(Math.random()-.5)*1.1,ca=Math.cos(sa),sn=Math.sin(sa);
+     G.parts.push({x:e.x,y:e.y,vx:(ux*ca-uy*sn)*sp,vy:(ux*sn+uy*ca)*sp,life:.15+Math.random()*.12,ml:.27,sz:2+Math.random()*2.5,col:e.out||'#fff'});}}
+  // Floating damage number — bigger/gold on heavy hits, jittered so rapid hits fan out
+  const _big=dmg>=(e.maxHp||30)*.34||dmg>=40;
+  addFT(Math.round(dmg).toString(),e.x+(Math.random()-.5)*TL*.45,e.y-TL*.5,_big?'#ffd34d':'#fff',
+    {size:_big?20:13,vy:_big?46:34,pop:_big?1.5:.7,life:_big?.85:.6});
   const cfg=STAGGER_CFG[e.type]||STAGGER_DEFAULT;
   if(!(e.staggerResist>0)){
     const dx=e.x-G.p.x,dy=e.y-G.p.y,dl=Math.hypot(dx,dy)||1;
@@ -7632,6 +8647,7 @@ function killEnemy(e,overkill=0){
   // Kill chain — resets after 2s of no kills, scales hit-stop
   if(!G.killChain||G.t-G.killChainT>2){G.killChain=0;}
   G.killChain++;G.killChainT=G.t;
+  if(G.killChain>1){try{SFX.chainPing(G.killChain);}catch(e){}}
   const chainHitStop=Math.min(7,1+G.killChain); // 2 frames base, +1 per chain kill, cap 7
 
   const bigOverkill=overkill>1.5,isOverkill=overkill>.5;
@@ -7667,11 +8683,50 @@ function killEnemy(e,overkill=0){
   checkLevelUp();
 }
 
+// ── BOSS GATE — slams shut on wake, re-opens on death (theatrics) ──
+function sealBossGate(){
+  const bd=G.lv&&G.lv.bossDoor; if(!bd||bd.sealed)return;
+  bd.sealed=true;
+  bd.tiles.forEach(([x,y])=>{if(G.lv.map[y]){G.lv.map[y][x]=TWALL;(G._mpMapUpd=G._mpMapUpd||[]).push([x,y,TWALL]);}});
+  addShake(11);G.hitStop=Math.max(G.hitStop,3);
+  const gx=(bd.tiles[1][0]+.5)*TL, gy=(bd.tiles[1][1]+.5)*TL;
+  for(let i=0;i<18;i++){const a=Math.random()*Math.PI*2,s=50+Math.random()*130;
+    G.parts.push({x:gx+(Math.random()-.5)*TL*3,y:gy,vx:Math.cos(a)*s,vy:-20-Math.random()*70,life:.4+Math.random()*.2,ml:.6,sz:2+Math.random()*3,col:'rgba(150,140,120,.6)'});}
+  try{SFX.wallBreak();}catch(e){}
+  // Safety: if anyone is standing on a gate tile as it seals, nudge them into the arena
+  eachPlayer(pl=>{const ptx=Math.floor(pl.x/TL),pty=Math.floor(pl.y/TL);
+    if(bd.tiles.some(([x,y])=>x===ptx&&y===pty))pl.y=(bd.tiles[0][1]-1+.5)*TL;});
+  showMsg('The gate crashes down!');
+}
+function openBossGate(){
+  const bd=G.lv&&G.lv.bossDoor; if(!bd||!bd.sealed)return;
+  bd.sealed=false;
+  bd.tiles.forEach(([x,y])=>{if(G.lv.map[y]){G.lv.map[y][x]=TFLOOR;(G._mpMapUpd=G._mpMapUpd||[]).push([x,y,TFLOOR]);}});
+}
+// On death mid-boss: heal the boss one phase back, reset its state, and re-open the gate.
+function resetBossAfterDeath(){
+  const b=G.lv&&G.lv.boss; if(!b)return;
+  const curF=b.hp/b.maxHp;
+  const curPhase=curF>.75?1:curF>.5?2:curF>.25?3:4;
+  if(G.lv.wyrmMaze){const mt=b.bossState&&b.bossState.mazeTiles;if(mt)mt.forEach(([x,y,orig])=>{if(G.lv.map[y])G.lv.map[y][x]=orig;});G.lv.wyrmMaze=null;}
+  const healFrac={1:1.0,2:.75,3:.5,4:.25}[curPhase]||1.0;
+  b.hp=Math.min(b.maxHp,Math.floor(b.maxHp*healFrac)+1); // +1 so HP lands inside the healthier band
+  b.phase=Math.max(1,curPhase-1);
+  b.active=false;b.state='idle';b.bossState=null;
+  b.vx=0;b.vy=0;b.hitFlash=0;b._untargetable=false;b._burrow=0;b.invuln=0;b.dying=false;
+  if(G.lv.bossSpawn){b.x=G.lv.bossSpawn.x;b.y=G.lv.bossSpawn.y;}
+  G.lv.warnings=[];G.lv.hazards=[];G.lv.lichTether=null;G.lv.lichTpTele=null;G.lv.iceWall=null;
+  G.lv.enemies=[];G.projs=(G.projs||[]).filter(pr=>pr._local);
+  openBossGate();
+}
+
 function startBossDeath(b,bx,by){
   b.dying=true;b.dyingTimer=0;b.dyingDuration=3.0;
+  if(G.lv)G.lv.bossDefeated=true; // switches music to the victory theme
   // Clear any lingering attacks (soul tether beam, hazards)
   if(G.lv){
     G.lv.lichTether=null;
+    G.lv.lichTpTele=null;
     G.lv.warnings=[];
     G.lv.hazards=[];
     G.lv.iceWall=null; // stop any sweeping ice wall
@@ -8068,6 +9123,14 @@ const SFX=(()=>{
     [[1047,.12],[1319,.2],[1568,.28]].forEach(([fr,d])=>{const o=osc(fr,'triangle'),og=c.createGain();
       env(og,.28,0,.02,.32,now+d);o.connect(og);og.connect(g);o.start(now+d);o.stop(now+d+.36);});}catch(e){}
   }
+  // Pet the cat — soft low purr + a happy little "mrrp"
+  function purr(){
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.3;g.connect(dest());
+    const o=osc(78,'sawtooth'),f=filt('lowpass',360),og=c.createGain();
+    env(og,.42,0,.08,.5,now);o.connect(f);f.connect(og);og.connect(g);o.start(now);o.stop(now+.6);
+    [[440,0],[560,.07],[500,.14]].forEach(([fr,d])=>{const o2=osc(fr,'triangle'),f2=filt('bandpass',1000,1),og2=c.createGain();
+      env(og2,.2,0,.01,.12,now+d);o2.connect(f2);f2.connect(og2);og2.connect(g);o2.start(now+d);o2.stop(now+d+.15);});}catch(e){}
+  }
   // Player hurt
   function playerHurt(cls){
     cls=cls||(typeof G!=='undefined'&&G.p?G.p.charClass:null);
@@ -8121,8 +9184,25 @@ const SFX=(()=>{
     o.connect(og);og.connect(g);o.start(now);o.stop(now+.12);}catch(e){}
   }
 
+  // Low-HP heartbeat — two soft sine thumps
+  function heartbeat(){
+    try{const c=ac(),now=c.currentTime;
+      const thump=(t,f)=>{const g=c.createGain();g.connect(dest());const o=osc(f,'sine'),og=c.createGain();
+        env(og,.5,.005,.02,.12,t);o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*.6,t+.12);
+        o.connect(og);og.connect(g);o.start(t);o.stop(t+.16);};
+      thump(now,80);thump(now+.16,66);}catch(e){}
+  }
+  // Kill-chain ping — pitch climbs a semitone per combo step so streaks sound as good as they feel
+  function chainPing(n){
+    try{const c=ac(),now=c.currentTime,g=c.createGain();g.gain.value=.26;g.connect(dest());
+      const deg=Math.min(15,n),f=440*Math.pow(2,deg/12);
+      const o=osc(f,'triangle'),og=c.createGain();env(og,.5,.003,0,.13,now);
+      o.connect(og);og.connect(g);o.start(now);o.stop(now+.16);
+      const o2=osc(f*2,'sine'),o2g=c.createGain();env(o2g,.16,.003,0,.1,now);
+      o2.connect(o2g);o2g.connect(g);o2.start(now);o2.stop(now+.12);}catch(e){}
+  }
   return{hit,swing,shoot,impact,turboFire,enemyDie,boom,bossHit,bossDie,
-    gold,crystal,hubCrystal,food,key,powerup,chest,playerHurt,stompWarn,levelUp,wallBreak,spike,setMute,atPos,
+    gold,crystal,hubCrystal,food,key,powerup,chest,playerHurt,stompWarn,levelUp,wallBreak,spike,heartbeat,chainPing,purr,setMute,atPos,
     ctx:()=>ac(), master:()=>MASTER};
 })();
 
@@ -8282,9 +9362,16 @@ const MUSIC=(()=>{
       kick:[1,0,0,1,1,0,0,0,1,0,0,1,1,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
       hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
       bassInst:'sawtooth', bassGain:0.12, bassCut:1000, leadInst:'square', leadGain:0.08, leadCut:2600, leadDur:0.24, sweep:0.4 },
-  };
 
-  // ── SEQUENCER ──────────────────────────────
+    // ── VICTORY — slower, heroic; plays after the boss is slain (mixolydian = anthemic major) ──
+    victory:{ bpm:90, root:130.81, scale:SC.mixo, padInst:'triangle', padCut:1500, padBars:2, padGain:0.065,
+      chords:[[0,2,4],[3,5,7],[4,6,8],[0,2,4]],
+      bass:[0,_,_,_,4,_,_,_, 3,_,_,_,4,_,5,_],
+      melody:[4,_,_,7,_,_,9,_, 11,_,_,_,_,_,_,_, 7,_,9,_,11,_,_,_, 12,_,_,_,_,_,_,_],
+      kick:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],
+      hat:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+      bassInst:'triangle', bassGain:0.11, bassCut:900, leadInst:'triangle', leadGain:0.095, leadCut:2800, leadDur:0.6 },
+  };
   // Adaptive tempo: boss themes accelerate as the fight escalates through HP phases —
   // tension builds toward the kill (classic dynamic-music technique).
   function effBpm(){
@@ -8423,6 +9510,7 @@ function onDeath(p){
       G.projs=G.projs.filter(pr=>!pr._local);
       G.ftexts=[];
       MODE=deathMode; // back to boss if we died mid-boss, else level
+      if(deathMode==='boss'&&(!MP.enabled||MP.isHost))resetBossAfterDeath();
       // Notify clients of host respawn so they can snap host's marker to playerStart
       if(MP.enabled&&MP.isHost){
         (G._mpRespawns=G._mpRespawns||[]).push(0);
@@ -8480,12 +9568,19 @@ function spawnP(x,y,col,n=7){
     G.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.22+Math.random()*.2,ml:.22+Math.random()*.2,sz:2.5+Math.random()*3,col});
   }
 }
-function addFT(t,x,y,col){G.ftexts.push({t,x,y,col,life:.88,ml:.88});}
+function addFT(t,x,y,col,o){o=o||{};const life=o.life||.88;G.ftexts.push({t,x,y,col,life,ml:life,size:o.size||14,vy:(o.vy!==undefined?o.vy:30),pop:o.pop||0});}
+// Records the direction the LOCAL player was just hit from, for the screen-edge damage indicator.
+function playerDamagedFrom(sx,sy){
+  if(typeof sx!=='number'||typeof sy!=='number'||!G.p)return;
+  const dx=sx-G.p.x,dy=sy-G.p.y;
+  if(dx===0&&dy===0)return;
+  G.dmgDir=Math.atan2(dy,dx);G.dmgDirT=1;
+}
 function updParts(dt){
   G.parts=G.parts.filter(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.85;p.vy*=.85;p.life-=dt;return p.life>0;});
   // Hard cap to prevent particle explosions tanking framerate
   if(G.parts.length>500)G.parts.splice(0,G.parts.length-500);
-  G.ftexts=G.ftexts.filter(t=>{t.y-=30*dt;t.life-=dt;return t.life>0;});
+  G.ftexts=G.ftexts.filter(t=>{t.y-=(t.vy!==undefined?t.vy:30)*dt;t.life-=dt;return t.life>0;});
   if(G.ftexts.length>40)G.ftexts.splice(0,G.ftexts.length-40);
 }
 
@@ -8626,6 +9721,38 @@ function drawVignette(){
     vg2.addColorStop(0,'rgba(0,0,0,0)');vg2.addColorStop(1,`rgba(200,20,20,${h*.6})`);
     ctx.fillStyle=vg2;ctx.fillRect(0,0,W,H);
   }
+  // Low-HP danger — a pulsing red SCREEN-EDGE flash for the LOCAL (impacted) player only.
+  // Teammates' low HP is surfaced on their party card instead (see updTeamCards).
+  if(G.p&&G.p.hp>0&&G.p.maxHp&&(MODE==='level'||MODE==='boss')){
+    const hpFrac=G.p.hp/G.p.maxHp;
+    if(hpFrac<.34){
+      const sev=(.34-hpFrac)/.34;                              // 0→1 toward death
+      const pulse=.42+.58*Math.abs(Math.sin(G.t*(4.2+sev*6))); // heartbeat speeds up as you weaken
+      const a=(.30+.45*sev)*pulse;                             // edge intensity
+      const band=H*(.16+.16*sev);                              // band creeps inward when near death
+      const edge=(stops)=>{const g=ctx.createLinearGradient(stops[0],stops[1],stops[2],stops[3]);
+        g.addColorStop(0,`rgba(205,0,0,${a})`);g.addColorStop(.55,'rgba(170,0,0,0)');g.addColorStop(1,'rgba(170,0,0,0)');
+        ctx.fillStyle=g;ctx.fillRect(0,0,W,H);};
+      edge([0,0,0,band]);        // top
+      edge([0,H,0,H-band]);      // bottom
+      edge([0,0,band,0]);        // left
+      edge([W,0,W-band,0]);      // right
+      // faint inner tint only when critically low, so the centre reads danger too
+      if(sev>.4){
+        const vg3=ctx.createRadialGradient(W*.5,H*.5,H*.22,W*.5,H*.5,H);
+        vg3.addColorStop(0,'rgba(0,0,0,0)');vg3.addColorStop(1,`rgba(150,0,0,${a*.5})`);
+        ctx.fillStyle=vg3;ctx.fillRect(0,0,W,H);
+      }
+    }
+  }
+  // Directional damage indicator — a red glow blooms from the screen edge toward the hit source
+  if(G.dmgDirT>0){
+    const ang=G.dmgDir||0,a=G.dmgDirT*.5;
+    const gx=W*.5+Math.cos(ang)*W*.46,gy=H*.5+Math.sin(ang)*H*.46;
+    const g=ctx.createRadialGradient(gx,gy,0,gx,gy,Math.min(W,H)*.5);
+    g.addColorStop(0,`rgba(255,45,45,${a})`);g.addColorStop(1,'rgba(255,45,45,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }
 }
 
 function drawMinimap(){
@@ -8676,6 +9803,18 @@ function drawMinimap(){
     ctx.fillStyle='rgba(255,76,76,.9)';
     ctx.fillRect(m.x-1,m.y-1,Math.max(2,cell*.8),Math.max(2,cell*.8));
   });
+  // Crystals you've laid eyes on stay PINNED so you can circle back for them later
+  if(!G.lv.seenCrystals)G.lv.seenCrystals=new Set();
+  (G.lv.items||[]).forEach(it=>{
+    if(it.type!=='crystal'||it.collected||!isFinite(it.x))return;
+    const key=Math.round(it.x)+':'+Math.round(it.y);
+    if(hasLOS(G.p.x,G.p.y,it.x,it.y))G.lv.seenCrystals.add(key);
+    if(!G.lv.seenCrystals.has(key))return;
+    const m=toMap(it.x,it.y),r=Math.max(2,cell*1.05);
+    ctx.fillStyle='#b59cff';ctx.shadowColor='#9c6cff';ctx.shadowBlur=5;
+    ctx.beginPath();ctx.moveTo(m.x,m.y-r);ctx.lineTo(m.x+r,m.y);ctx.lineTo(m.x,m.y+r);ctx.lineTo(m.x-r,m.y);ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0;
+  });
   if(MODE==='boss'&&G.lv.boss?.active){
     const m=toMap(G.lv.boss.x,G.lv.boss.y);
     ctx.fillStyle='#ff2244';ctx.shadowColor='#ff2244';ctx.shadowBlur=4;
@@ -8717,13 +9856,30 @@ function drawMinimap(){
   }
 }
 
+function drawBossGate(){
+  const bd=G.lv&&G.lv.bossDoor; if(!bd)return;
+  bd.animCur=lerp(bd.animCur||0,bd.sealed?1:0,Math.min(1,(G.dt_last||.016)*9));
+  if(bd.animCur<=.01)return;
+  const a=bd.animCur;
+  bd.tiles.forEach(([tx,ty])=>{
+    const wx=tx*TL,wy=ty*TL,dh=a*TL;
+    ctx.fillStyle='#161009';ctx.fillRect(wx,wy,TL,dh);                 // gate backing
+    ctx.strokeStyle='#4a4138';ctx.lineWidth=3;                         // vertical iron bars
+    for(let bxp=wx+7;bxp<wx+TL-3;bxp+=8){ctx.beginPath();ctx.moveTo(bxp,wy);ctx.lineTo(bxp,wy+dh);ctx.stroke();}
+    ctx.strokeStyle='#6a6056';ctx.lineWidth=4;                         // bottom rail with sheen
+    ctx.beginPath();ctx.moveTo(wx,wy+dh-3);ctx.lineTo(wx+TL,wy+dh-3);ctx.stroke();
+    ctx.fillStyle='#2e2820';                                           // spiked bottom edge
+    for(let bxp=wx+7;bxp<wx+TL-3;bxp+=8){ctx.beginPath();ctx.moveTo(bxp-3,wy+dh-1);ctx.lineTo(bxp+3,wy+dh-1);ctx.lineTo(bxp,wy+dh+5);ctx.closePath();ctx.fill();}
+  });
+}
+
 function renderLevel(){
   const cb=document.getElementById('coopbtn');if(cb)cb.style.display='none';
   const th=G.curRealm.th;
   const voidBg={forsaken:'#08040f',mountain:'#060503',castle:'#09080f'}[G.curRealm?.id]||'#05040e';
   ctx.fillStyle=voidBg;ctx.fillRect(0,0,cv.width,cv.height);
-  const shx=G.shakeT>0?(Math.random()-.5)*G.shakeT:0;
-  const shy=G.shakeT>0?(Math.random()-.5)*G.shakeT:0;
+  const shx=(G.shakeT>0?(Math.random()-.5)*G.shakeT:0)+(G.camKickX||0);
+  const shy=(G.shakeT>0?(Math.random()-.5)*G.shakeT:0)+(G.camKickY||0);
   ctx.save();
   // Zoom around screen center, then apply camera translate. The camera keeps the
   // player centered (see updCam), so zooming around screen center keeps them centered.
@@ -8733,6 +9889,9 @@ function renderLevel(){
   ctx.translate(shx-G.cam.x,shy-G.cam.y);
   drawRealmVoid(th);  // realm-specific art outside playable area — drawn first
   drawMap(th);
+  drawLightPools();
+  drawChargeTeles();
+  if(G.lv.bossDoor)drawBossGate();
   if(G.lv.decos&&G.lv.decos.length)drawBossDecos(G.lv.decos);
   if(G.lv.bossPortal)drawBossPortal(G.lv.bossPortal); // above floor decos
   drawBarrels();
@@ -8776,6 +9935,21 @@ function renderLevel(){
     }
     ctx.beginPath();ctx.moveTo(t.bx,t.by);ctx.lineTo(t.px,t.py);ctx.stroke();
     ctx.setLineDash([]);ctx.shadowBlur=0;
+  }
+  // Lich teleport telegraph — a sigil blooms where the Lich is about to blink in
+  if(G.lv?.lichTpTele&&G.lv.boss&&!G.lv.boss.dying){
+    const tp=G.lv.lichTpTele,pr=clamp((tp.t||0)/(tp.dur||0.55),0,1),pulse=Math.sin(G.t*16)*.25+.75,R=TL*1.15;
+    ctx.save();ctx.translate(tp.x,tp.y);
+    ctx.globalAlpha=.55*pr;
+    ctx.fillStyle='rgba(24,4,34,0.7)';ctx.beginPath();ctx.arc(0,0,R*(.4+.6*pr),0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=Math.min(1,.45+pr);
+    ctx.strokeStyle=`rgba(190,90,255,${pulse})`;ctx.lineWidth=2.5;ctx.shadowColor='#bb44ff';ctx.shadowBlur=14*pulse;
+    ctx.beginPath();ctx.arc(0,0,R*(1.28-.5*pr),0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle=`rgba(224,160,255,${.5+.5*pr})`;ctx.lineWidth=2;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(0,0,R*.6,-Math.PI/2,-Math.PI/2+Math.PI*2*pr,false);ctx.stroke();
+    ctx.rotate(G.t*2.2);ctx.strokeStyle=`rgba(205,130,255,${.5*pr})`;ctx.lineWidth=1.5;ctx.shadowBlur=4;
+    for(let i=0;i<6;i++){const a=i/6*Math.PI*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.3,Math.sin(a)*R*.3);ctx.lineTo(Math.cos(a)*R*.92,Math.sin(a)*R*.92);ctx.stroke();}
+    ctx.restore();ctx.shadowBlur=0;ctx.globalAlpha=1;
   }
   // Wyrm labyrinth — channel telegraph at the casting Wyrm + a progress ring
   if(G.lv?.wyrmMaze&&G.lv.boss){
@@ -8868,9 +10042,10 @@ function renderLevel(){
   if(MUT('dark')){
     const _ds=worldToScreen(G.p.x,G.p.y);
     const visR=Math.min(cv.width,cv.height)*0.34;
-    const dg=ctx.createRadialGradient(_ds.x,_ds.y,visR*0.45,_ds.x,_ds.y,visR*1.7);
+    const dg=ctx.createRadialGradient(_ds.x,_ds.y,visR*0.35,_ds.x,_ds.y,visR*2.0);
     dg.addColorStop(0,'rgba(0,0,0,0)');
-    dg.addColorStop(0.7,'rgba(0,0,0,0.62)');
+    dg.addColorStop(0.5,'rgba(0,0,0,0.18)');
+    dg.addColorStop(0.78,'rgba(0,0,0,0.55)');
     dg.addColorStop(1,'rgba(0,0,0,0.9)');
     ctx.fillStyle=dg;ctx.fillRect(0,0,cv.width,cv.height);
   }
@@ -9337,6 +10512,117 @@ function drawRealmVoid(th){
   }
 }
 
+// Realm-themed scatter sprinkled across floor tiles (incl. corridors) so the world isn't bare.
+function drawFloorScatter(id,wx,wy,h){
+  const ox=wx+TL*(.2+((h>>5)%5)/8), oy=wy+TL*(.25+((h>>8)%5)/8);
+  if(id==='forsaken'){
+    if((h>>11)%2===0){ // bone shard
+      ctx.strokeStyle='rgba(205,200,178,.15)';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox+TL*.18,oy+TL*.05);ctx.stroke();
+      ctx.fillStyle='rgba(212,206,186,.16)';ctx.beginPath();ctx.arc(ox,oy,1.5,0,Math.PI*2);ctx.arc(ox+TL*.18,oy+TL*.05,1.5,0,Math.PI*2);ctx.fill();
+    } else { // dark stain
+      ctx.fillStyle='rgba(18,4,30,.28)';ctx.beginPath();ctx.ellipse(ox,oy,TL*.16,TL*.1,h%3,0,Math.PI*2);ctx.fill();
+    }
+  } else if(id==='mountain'){
+    ctx.fillStyle='rgba(58,44,26,.55)';
+    for(let i=0;i<3;i++)ctx.fillRect(ox+i*4-((h>>i)%3),oy+((h>>(i+2))%5),2,2); // rubble
+    if((h>>12)%4===0){ctx.fillStyle='rgba(255,120,40,.5)';ctx.shadowColor='#ff7722';ctx.shadowBlur=5;ctx.beginPath();ctx.arc(ox,oy,1.6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;} // ember
+  } else if(id==='castle'){
+    ctx.strokeStyle='rgba(0,0,0,.22)';ctx.lineWidth=1; // cracked flagstone
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox+TL*.2,oy+TL*.12);ctx.lineTo(ox+TL*.12,oy+TL*.26);ctx.stroke();
+  } else if(id==='ice'){
+    ctx.strokeStyle='rgba(192,226,246,.2)';ctx.lineWidth=1; // frost crack
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox+TL*.14,oy-TL*.05);ctx.moveTo(ox,oy);ctx.lineTo(ox-TL*.05,oy+TL*.12);ctx.stroke();
+  }
+}
+// Full floor tile: base checker + mottle + flagstone seams + scatter + wall ambient occlusion.
+// Rarer, larger per-realm floor features — reflective ice, scorch marks, tomb slabs, inlays.
+function drawFloorFeature(id,wx,wy,h){
+  const cx=wx+TL*.5,cy=wy+TL*.5;
+  if(id==='ice'){ // wet / reflective ice patch with a glossy highlight streak
+    const g=ctx.createRadialGradient(cx,cy,1,cx,cy,TL*.42);
+    g.addColorStop(0,'rgba(190,225,250,.16)');g.addColorStop(1,'rgba(150,195,230,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(cx,cy,TL*.42,TL*.3,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(235,248,255,.3)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(cx-TL*.2,cy-TL*.08);ctx.lineTo(cx+TL*.05,cy-TL*.14);ctx.stroke();
+  } else if(id==='mountain'){ // scorch mark — burnt ground with a cracked glowing-ember core
+    ctx.fillStyle='rgba(10,6,4,.5)';ctx.beginPath();ctx.ellipse(cx,cy,TL*.38,TL*.3,h%3,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(255,90,20,.45)';ctx.lineWidth=1;ctx.shadowColor='#ff5500';ctx.shadowBlur=5;
+    for(let i=0;i<3;i++){const a=i/3*Math.PI*2+(h%5);ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*TL*.22,cy+Math.sin(a)*TL*.18);ctx.stroke();}
+    ctx.shadowBlur=0;
+  } else if(id==='forsaken'){ // cracked tomb slab set into the floor
+    ctx.fillStyle='rgba(255,255,255,.025)';ctx.fillRect(wx+TL*.2,wy+TL*.22,TL*.6,TL*.56);
+    ctx.strokeStyle='rgba(0,0,0,.3)';ctx.lineWidth=1.5;ctx.strokeRect(wx+TL*.18,wy+TL*.2,TL*.64,TL*.6);
+    ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-TL*.1,wy+TL*.2);ctx.lineTo(cx+TL*.06,cy);ctx.lineTo(cx-TL*.04,wy+TL*.8);ctx.stroke();
+  } else { // castle — decorative gold floor inlay medallion (Zelda-style)
+    ctx.strokeStyle='rgba(200,165,70,.22)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(cx,cy,TL*.3,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,TL*.18,0,Math.PI*2);ctx.stroke();
+    ctx.lineWidth=1;for(let i=0;i<4;i++){const a=i/4*Math.PI*2+Math.PI/4;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*TL*.3,cy+Math.sin(a)*TL*.3);ctx.stroke();}
+  }
+}
+// Rarer, larger per-realm floor features — reflective ice, scorch marks, tomb slabs, inlays.
+function drawFloorBase(th,id,tx,ty,wx,wy,flOverlay){
+  ctx.fillStyle=th.fl[(tx+ty)%2];ctx.fillRect(wx,wy,TL,TL);
+  if(flOverlay){ctx.fillStyle=flOverlay;ctx.fillRect(wx,wy,TL,TL);}
+  const h=((tx*928371+ty*689287)>>>0);
+  const m=h%7; // mottle to break grid uniformity
+  if(m===0){ctx.fillStyle='rgba(255,255,255,.02)';ctx.fillRect(wx,wy,TL,TL);}
+  else if(m===1){ctx.fillStyle='rgba(0,0,0,.05)';ctx.fillRect(wx,wy,TL,TL);}
+  // flagstone seams (top + left dark, bottom faint light) for a laid-stone read
+  ctx.fillStyle='rgba(0,0,0,.10)';ctx.fillRect(wx,wy,TL,1);ctx.fillRect(wx,wy,1,TL);
+  ctx.fillStyle='rgba(255,255,255,.015)';ctx.fillRect(wx,wy+TL-1,TL,1);
+  // Per-realm base pattern — gives each realm a distinct floor read
+  if(id==='castle'){ // large flagstones: heavier mortar every 2 tiles + faint stone sheen
+    if(tx%2===0){ctx.fillStyle='rgba(0,0,0,.16)';ctx.fillRect(wx,wy,1.5,TL);}
+    if(ty%2===0){ctx.fillStyle='rgba(0,0,0,.16)';ctx.fillRect(wx,wy,TL,1.5);}
+    ctx.fillStyle='rgba(255,255,255,.012)';ctx.fillRect(wx+2,wy+2,TL-4,TL-4);
+  } else if(id==='ice'){ // frozen sheet: cool sheen + occasional fracture
+    ctx.fillStyle='rgba(160,205,235,.045)';ctx.fillRect(wx,wy,TL,TL);
+    if((h>>6)%5===0){ctx.strokeStyle='rgba(205,232,250,.16)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(wx,wy+TL*.3);ctx.lineTo(wx+TL,wy+TL*.55);ctx.stroke();}
+  } else if(id==='forsaken'){ // catacomb brick: staggered horizontal courses (subtle)
+    ctx.fillStyle='rgba(0,0,0,.08)';ctx.fillRect(wx,wy+TL*.5,TL,1);
+    if((h>>4)%2===0){const off=(ty%2)*TL*.5;ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(wx+off,wy,1,TL*.5);ctx.fillRect(wx+((off+TL*.5)%TL),wy+TL*.5,1,TL*.5);}
+  } else if(id==='mountain'){ // cracked earth: irregular fissures
+    if((h>>7)%4===0){ctx.strokeStyle='rgba(0,0,0,.18)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(wx+TL*.1,wy+TL*.2);ctx.lineTo(wx+TL*.45,wy+TL*.5);ctx.lineTo(wx+TL*.35,wy+TL*.85);ctx.stroke();}
+  }
+  const d=(h>>3)%9; // scatter on ~2/9 of tiles
+  if(d===0||d===5)drawFloorScatter(id,wx,wy,h);
+  if((h>>9)%17===0)drawFloorFeature(id,wx,wy,h);
+  // Ambient occlusion — soft banded shadow cast onto the floor by adjacent walls
+  const map=G.lv.map;
+  if(map[ty-1]&&map[ty-1][tx]===TWALL){ctx.fillStyle='rgba(0,0,0,.20)';ctx.fillRect(wx,wy,TL,4);ctx.fillStyle='rgba(0,0,0,.10)';ctx.fillRect(wx,wy,TL,9);}
+  if(map[ty]&&map[ty][tx-1]===TWALL){ctx.fillStyle='rgba(0,0,0,.16)';ctx.fillRect(wx,wy,3,TL);ctx.fillStyle='rgba(0,0,0,.08)';ctx.fillRect(wx,wy,7,TL);}
+  if(map[ty]&&map[ty][tx+1]===TWALL){ctx.fillStyle='rgba(0,0,0,.10)';ctx.fillRect(wx+TL-5,wy,5,TL);}
+}
+
+// Additive light pools — warm/cool glows cast onto the floor by light sources.
+function drawLightPools(){
+  if(!G.lv)return;
+  const camx=G.cam.x,camy=G.cam.y,W=cv.width/CAMZOOM,H=cv.height/CAMZOOM;
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  const pool=(x,y,r,col,a)=>{
+    if(a<=0||x<camx-r||x>camx+W+r||y<camy-r||y>camy+H+r)return;
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,hexA(col,a));g.addColorStop(1,hexA(col,0));
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  };
+  // Exit rift — cool arcane pool
+  if(G.lv.stairsPos){const ex=(G.lv.stairsPos.x+.5)*TL,ey=(G.lv.stairsPos.y+.5)*TL;pool(ex,ey,TL*3.4,'#caa3ff',.11+.04*Math.sin(G.t*2.3));}
+  if(G.lv.bossPortal)pool(G.lv.bossPortal.x,G.lv.bossPortal.y,TL*3.4,'#ff66aa',.13+.04*Math.sin(G.t*3));
+  // Pickups cast their own colour onto the floor
+  const cc=G.curRealm?.cc||'#cc88ff';
+  (G.lv.items||[]).forEach(it=>{
+    if(it.hidden)return;
+    if(it.type==='crystal')pool(it.x,it.y,TL*1.9,cc,.18);
+    else if(it.type==='gold')pool(it.x,it.y,TL*1.15,'#f5c542',.11);
+    else if(it.type==='powerup')pool(it.x,it.y,TL*1.7,'#66ffcc',.13);
+    else if(it.type==='food')pool(it.x,it.y,TL*1.1,'#ff8844',.08);
+  });
+  // Faint personal light so the player always sits in a soft pool
+  if(G.p&&G.p.hp>0)pool(G.p.x,G.p.y,TL*3.0,'#ffeccc',.06);
+  ctx.restore();
+}
+
 function drawMap(th){
   const cl=Math.floor(G.cam.x/TL)-1,ct=Math.floor(G.cam.y/TL)-1;
   const cr=Math.ceil((G.cam.x+cv.width)/TL)+1,cb=Math.ceil((G.cam.y+cv.height)/TL)+1;
@@ -9345,15 +10631,48 @@ function drawMap(th){
     for(let tx=Math.max(0,cl);tx<Math.min(MW,cr);tx++){
       const t=G.lv.map[ty][tx],wx=tx*TL,wy=ty*TL;
       if(t===TWALL){
-        // Subtle per-tile brightness variation to break up large wall masses
+        // Wall exposure — does this rock tile face any open (walkable) tile?
+        const _m=G.lv.map;
+        const _op=(x,y)=>{const r=_m[y];if(!r)return false;const v=r[x];return v===TFLOOR||v===TDOOR||v===TEXIT||v===TSPIKE;};
+        const exS=_op(tx,ty+1);
+        const ex4=_op(tx,ty-1)||exS||_op(tx-1,ty)||_op(tx+1,ty);
+        const ex8=ex4||_op(tx-1,ty-1)||_op(tx+1,ty-1)||_op(tx-1,ty+1)||_op(tx+1,ty+1);
         const seed=(tx*73+ty*31)%16;
         const varBright=seed<4?'rgba(255,255,255,.025)':seed>12?'rgba(0,0,0,.04)':null;
         ctx.fillStyle=th.wl;ctx.fillRect(wx,wy,TL,TL);
+        // Macro low-frequency variation — broad 3×3 patches so big masses aren't a uniform field
+        const macro=((((tx+2)/3|0)*131+((ty+1)/3|0)*197)>>>0)%6;
+        if(macro===0){ctx.fillStyle='rgba(255,255,255,.022)';ctx.fillRect(wx,wy,TL,TL);}
+        else if(macro===3||macro===4){ctx.fillStyle='rgba(0,0,0,.08)';ctx.fillRect(wx,wy,TL,TL);}
         if(varBright){ctx.fillStyle=varBright;ctx.fillRect(wx,wy,TL,TL);}
-        ctx.fillStyle=th.wt;ctx.fillRect(wx,wy,TL,5);
+        // Lit top cap ONLY on exposed faces — interior tiles keep no cap, which dissolves the grid
+        if(ex4){ctx.fillStyle=th.wt;ctx.fillRect(wx,wy,TL,5);ctx.fillStyle='rgba(255,255,255,.06)';ctx.fillRect(wx,wy+5,TL,1.5);}
+        if(exS){ctx.fillStyle='rgba(0,0,0,.30)';ctx.fillRect(wx,wy+TL-6,TL,6);ctx.fillStyle='rgba(0,0,0,.14)';ctx.fillRect(wx,wy+TL-10,TL,4);
+          const _rid=G.curRealm?.id;
+          if(_rid==='ice'){ // frost creep — crystalline rime climbing the wall base
+            ctx.fillStyle='rgba(195,228,250,.22)';
+            for(let i=0;i<6;i++){const px=wx+3+i*6,fh=3+((tx*7+ty*3+i)%5);ctx.beginPath();ctx.moveTo(px,wy+TL);ctx.lineTo(px+2,wy+TL-fh);ctx.lineTo(px+4,wy+TL);ctx.closePath();ctx.fill();}
+          } else if(_rid==='mountain'){ // ash drift — soot mounded at the base + stray ember
+            ctx.fillStyle='rgba(38,34,30,.55)';ctx.beginPath();ctx.moveTo(wx,wy+TL);ctx.quadraticCurveTo(wx+TL*.5,wy+TL-8,wx+TL,wy+TL);ctx.closePath();ctx.fill();
+            if((tx+ty*3)%4===0){ctx.fillStyle='rgba(255,110,30,.5)';ctx.shadowColor='#ff7722';ctx.shadowBlur=4;ctx.fillRect(wx+TL*.4+(tx%3)*4,wy+TL-3,2,2);ctx.shadowBlur=0;}
+          } else if(_rid==='forsaken'){ // creeping moss + a bone shard at the base
+            ctx.fillStyle='rgba(48,72,40,.3)';ctx.beginPath();ctx.ellipse(wx+TL*.5,wy+TL-1,TL*.42,4,0,0,Math.PI*2);ctx.fill();
+            if((tx*5+ty)%4===0){ctx.strokeStyle='rgba(202,196,178,.32)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(wx+TL*.3,wy+TL);ctx.lineTo(wx+TL*.34,wy+TL-7);ctx.stroke();}
+          } else { // castle — fallen masonry rubble + a fleck of moss
+            if((tx*17+ty*11)%3===0){ctx.fillStyle='rgba(120,112,128,.42)';for(let i=0;i<3;i++){const px=wx+7+i*10+((tx+i)%3);ctx.fillRect(px,wy+TL-4+((ty+i)%2),3,2.5);}}
+            if((tx+ty)%4===1){ctx.fillStyle='rgba(60,88,50,.24)';ctx.fillRect(wx+TL*.1,wy+TL-3,TL*.3,3);}
+          }
+        }
         // Realm-specific wall detail
         const id=G.curRealm?.id;
         if(id==='forsaken'){
+          // Embedded skull — rare point of interest on exposed rock faces
+          if(ex4&&(tx*13+ty*7)%29===5){
+            ctx.fillStyle='rgba(208,203,186,.5)';ctx.beginPath();ctx.arc(wx+TL*.5,wy+TL*.42,TL*.16,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle='rgba(178,173,156,.5)';ctx.fillRect(wx+TL*.41,wy+TL*.5,TL*.18,TL*.11);
+            ctx.fillStyle='rgba(18,8,26,.85)';ctx.beginPath();ctx.arc(wx+TL*.435,wy+TL*.4,TL*.045,0,Math.PI*2);ctx.arc(wx+TL*.565,wy+TL*.4,TL*.045,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle='rgba(18,8,26,.7)';ctx.beginPath();ctx.moveTo(wx+TL*.5,wy+TL*.43);ctx.lineTo(wx+TL*.475,wy+TL*.49);ctx.lineTo(wx+TL*.525,wy+TL*.49);ctx.closePath();ctx.fill();
+          }
           // Stone face variation
           if((tx+ty)%4===0){ctx.fillStyle='rgba(255,255,255,.03)';ctx.fillRect(wx+4,wy+8,TL-8,TL-16);}
           // Arcane crack — more visible
@@ -9375,6 +10694,13 @@ function drawMap(th){
           // Lichen patch
           if((tx*11+ty*7)%23===9){ctx.fillStyle='rgba(40,80,30,.18)';ctx.fillRect(wx+TL*.2,wy+TL*.35,TL*.5,TL*.25);}
         } else if(id==='mountain'){
+          // Embedded ore — rare glowing gem cluster on exposed rock
+          if(ex4&&(tx*13+ty*7)%31===4){
+            ctx.fillStyle='rgba(255,140,40,.5)';ctx.shadowColor='#ff8822';ctx.shadowBlur=6;
+            ctx.beginPath();ctx.moveTo(wx+TL*.5,wy+TL*.28);ctx.lineTo(wx+TL*.6,wy+TL*.42);ctx.lineTo(wx+TL*.52,wy+TL*.58);ctx.lineTo(wx+TL*.42,wy+TL*.5);ctx.closePath();ctx.fill();
+            ctx.shadowBlur=0;ctx.fillStyle='rgba(255,210,140,.7)';ctx.beginPath();ctx.arc(wx+TL*.5,wy+TL*.42,1.6,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle='rgba(255,120,30,.35)';ctx.fillRect(wx+TL*.34,wy+TL*.55,TL*.07,TL*.06);
+          }
           // Horizontal strata — more contrast
           ctx.fillStyle='rgba(100,80,45,.25)';ctx.fillRect(wx,wy+TL*.36,TL,2);
           ctx.fillStyle='rgba(60,45,25,.2)';ctx.fillRect(wx,wy+TL*.68,TL,1.5);
@@ -9390,6 +10716,15 @@ function drawMap(th){
             ctx.fillStyle='rgba(80,160,220,.3)';ctx.fillRect(wx+TL*.62,wy+TL*.1,2,TL*.7);
           }
         } else if(id==='castle'){
+          // Embedded iron ring + hanging chain — rare on exposed wall
+          if(ex4&&(tx*11+ty*9)%33===7){
+            ctx.strokeStyle='rgba(120,114,130,.6)';ctx.lineWidth=2.5;
+            ctx.beginPath();ctx.arc(wx+TL*.5,wy+TL*.3,TL*.1,0,Math.PI*2);ctx.stroke();
+            ctx.strokeStyle='rgba(150,145,160,.3)';ctx.lineWidth=1;
+            ctx.beginPath();ctx.arc(wx+TL*.5,wy+TL*.3,TL*.1,Math.PI*1.1,Math.PI*1.6);ctx.stroke();
+            ctx.strokeStyle='rgba(95,90,106,.55)';ctx.lineWidth=2;
+            for(let ci=0;ci<3;ci++){ctx.beginPath();ctx.ellipse(wx+TL*.5+(ci%2?2:-2),wy+TL*.45+ci*TL*.1,TL*.035,TL*.06,0,0,Math.PI*2);ctx.stroke();}
+          }
           // Stone block mortar — clearly visible joints
           const blockOff=ty%2===0?0:TL*.5;
           ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=1;
@@ -9406,6 +10741,15 @@ function drawMap(th){
             ctx.beginPath();ctx.moveTo(wx+TL*.3,wy+TL*.2);ctx.lineTo(wx+TL*.55,wy+TL*.7);ctx.stroke();
           }
         } else if(id==='ice'){
+          // Embedded ice-shard cluster — rare on exposed wall
+          if(ex4&&(tx*13+ty*5)%30===3){
+            ctx.fillStyle='rgba(170,220,250,.4)';ctx.shadowColor='#9fd8ff';ctx.shadowBlur=6;
+            [[0,-.1,.5],[.12,0,.34],[-.1,.04,.3]].forEach(([dx,dy,s])=>{
+              const cx=wx+TL*(.5+dx),cy=wy+TL*(.42+dy);
+              ctx.beginPath();ctx.moveTo(cx,cy-TL*s);ctx.lineTo(cx+TL*.05,cy);ctx.lineTo(cx-TL*.05,cy);ctx.closePath();ctx.fill();
+            });
+            ctx.shadowBlur=0;ctx.fillStyle='rgba(232,248,255,.6)';ctx.fillRect(wx+TL*.49,wy+TL*.2,1.4,TL*.16);
+          }
           // Frost rime along the top edge of each wall tile
           ctx.fillStyle='rgba(180,220,245,.14)';ctx.fillRect(wx,wy+5,TL,2);
           if((tx+ty)%3===0){ctx.fillStyle='rgba(200,230,250,.10)';ctx.fillRect(wx+4,wy+8,TL-8,TL*.4);}
@@ -9422,13 +10766,12 @@ function drawMap(th){
             ctx.fillStyle='rgba(180,230,255,.25)';ctx.fillRect(wx+TL*.44,wy+TL*.24,1.5,TL*.45);
           }
         }
+        // Rock depth — buried interior recedes into darkness (kills the flat repeating grid)
+        if(!ex4){ctx.fillStyle=ex8?'rgba(0,0,0,.30)':'rgba(0,0,0,.52)';ctx.fillRect(wx,wy,TL,TL);}
       } else if(t===TFLOOR){
-        ctx.fillStyle=th.fl[(tx+ty)%2];ctx.fillRect(wx,wy,TL,TL);
-        if(flOverlay){ctx.fillStyle=flOverlay;ctx.fillRect(wx,wy,TL,TL);}
-        ctx.strokeStyle='rgba(255,255,255,.018)';ctx.lineWidth=.5;
-        ctx.beginPath();ctx.moveTo(wx,wy);ctx.lineTo(wx+TL,wy);ctx.stroke();
+        drawFloorBase(th,G.curRealm?.id,tx,ty,wx,wy,flOverlay);
       } else if(t===TDOOR){
-        ctx.fillStyle=th.fl[0];ctx.fillRect(wx,wy,TL,TL);
+        drawFloorBase(th,G.curRealm?.id,tx,ty,wx,wy,flOverlay);
         ctx.fillStyle='#4a3318';ctx.fillRect(wx+4,wy+4,TL-8,TL-8);
         ctx.strokeStyle='#8b5a2b';ctx.lineWidth=2;ctx.strokeRect(wx+4,wy+4,TL-8,TL-8);
         ctx.fillStyle='#c08040';ctx.beginPath();ctx.arc(wx+TL/2,wy+TL/2,4,0,Math.PI*2);ctx.fill();
@@ -9564,9 +10907,15 @@ function drawMap(th){
     if(wy<G.cam.y-TL*3||wy>G.cam.y+cv.height+TL*3)return;
     const f=.85+.15*Math.sin(G.t*3.8+torch.ph);
     // Ambient glow centered at mount point
-    const gr=ctx.createRadialGradient(wx,wy,0,wx,wy,TL*2.8);
+    const gr=ctx.createRadialGradient(wx,wy,0,wx,wy,TL*3.4);
     gr.addColorStop(0,th.tc.replace(/,[\d.]+\)$/,`,${(.22*f).toFixed(3)})`));gr.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(wx,wy,TL*2.8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(wx,wy,TL*3.4,0,Math.PI*2);ctx.fill();
+    // Hot inner pool — warm light spilling onto the floor right below the flame
+    ctx.save();ctx.globalCompositeOperation='lighter';
+    const ig=ctx.createRadialGradient(wx,wy+4,0,wx,wy+4,TL*1.5);
+    ig.addColorStop(0,(th.fc||'rgba(255,160,60,')+(.22*f).toFixed(3)+')');ig.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=ig;ctx.beginPath();ctx.arc(wx,wy+4,TL*1.5,0,Math.PI*2);ctx.fill();
+    ctx.restore();
     // Sconce bracket — small mount on the wall face
     ctx.fillStyle='#6a4a18';
     if(torch.side){
@@ -9879,9 +11228,14 @@ function drawItems2(){
         ctx.font='bold 7px Cinzel,serif';ctx.fillStyle='#fff';
         ctx.fillText(item.val+'g',0,14);
       } else {
-        ctx.shadowColor='#f5c542';ctx.shadowBlur=10;
-        ctx.fillStyle='#f5c542';ctx.beginPath();ctx.arc(0,0,7,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle='#fff8c0';ctx.beginPath();ctx.arc(-2,-2,3,0,Math.PI*2);ctx.fill();
+        ctx.shadowColor='#f5c542';ctx.shadowBlur=9;
+        const gg=ctx.createRadialGradient(-2,-2,1,0,0,8);
+        gg.addColorStop(0,'#fff6c8');gg.addColorStop(.5,'#f5c542');gg.addColorStop(1,'#b07d0c');
+        ctx.fillStyle=gg;ctx.beginPath();ctx.arc(0,0,7.5,0,Math.PI*2);ctx.fill();
+        ctx.shadowBlur=0;
+        ctx.strokeStyle='rgba(120,80,10,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,0,7.5,0,Math.PI*2);ctx.stroke(); // rim
+        ctx.fillStyle='rgba(140,95,10,.5)';ctx.font='bold 8px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('✦',0,1); // embossed mark
+        ctx.fillStyle='rgba(255,255,255,.85)';ctx.beginPath();ctx.arc(-2.4,-2.4,1.8,0,Math.PI*2);ctx.fill(); // glint
       }
     } else if(item.type==='crystal'){
       const c=G.curRealm?.cc||'#cc88ff';
@@ -9897,39 +11251,66 @@ function drawItems2(){
       ctx.beginPath();ctx.moveTo(0,-3);ctx.lineTo(2.5,0);ctx.lineTo(0,3);ctx.lineTo(-2.5,0);ctx.closePath();ctx.fill();
       ctx.globalAlpha=1;
     } else if(item.type==='food'){
-      ctx.shadowColor='#ff8844';ctx.shadowBlur=8;
-      ctx.fillStyle='#cc5522';ctx.beginPath();ctx.ellipse(0,2,8,6,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#cc2222';ctx.beginPath();ctx.arc(0,-3,5,0,Math.PI*2);ctx.fill();
+      ctx.shadowColor='#ffae66';ctx.shadowBlur=7;
+      // Meat — rounded with radial gradient for volume
+      const fg=ctx.createRadialGradient(-2,-3,1,0,0,9);
+      fg.addColorStop(0,'#c9663a');fg.addColorStop(.6,'#9c3f1e');fg.addColorStop(1,'#5e2310');
+      ctx.fillStyle=fg;ctx.beginPath();ctx.ellipse(0,-1,8,7,0,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      // Glossy highlight
+      ctx.fillStyle='rgba(255,210,170,.45)';ctx.beginPath();ctx.ellipse(-2.5,-3.5,2.6,1.6,-.5,0,Math.PI*2);ctx.fill();
+      // Bone + knuckle poking out the bottom
+      ctx.strokeStyle='#efe6cf';ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(2,4);ctx.lineTo(6,9);ctx.stroke();
+      ctx.fillStyle='#efe6cf';ctx.beginPath();ctx.arc(6.6,9.4,2,0,Math.PI*2);ctx.arc(8.2,8.4,1.8,0,Math.PI*2);ctx.fill();
     } else if(item.type==='key'){
       const kf=.85+.15*Math.sin(G.t*3.5+item.bob);
-      ctx.shadowColor='#f5e642';ctx.shadowBlur=18*kf;
+      ctx.shadowColor='#f5e642';ctx.shadowBlur=16*kf;
+      const kg=ctx.createLinearGradient(-8,-12,8,15);
+      kg.addColorStop(0,'#fff2a0');kg.addColorStop(.5,'#e8c020');kg.addColorStop(1,'#9c7410');
+      ctx.strokeStyle=kg;ctx.fillStyle=kg;
       // Bow (ring)
-      ctx.strokeStyle='#f5e642';ctx.lineWidth=3;
-      ctx.beginPath();ctx.arc(0,-5,8,0,Math.PI*2);ctx.stroke();
-      ctx.fillStyle='rgba(245,230,66,.15)';ctx.beginPath();ctx.arc(0,-5,8,0,Math.PI*2);ctx.fill();
+      ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-5,7.5,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=.18;ctx.beginPath();ctx.arc(0,-5,7.5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
       // Stem
-      ctx.beginPath();ctx.moveTo(0,3);ctx.lineTo(0,15);ctx.stroke();
+      ctx.lineWidth=2.6;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(0,2.5);ctx.lineTo(0,15);ctx.stroke();
       // Teeth
-      ctx.beginPath();ctx.moveTo(0,9);ctx.lineTo(5,9);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(0,13);ctx.lineTo(4,13);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,9);ctx.lineTo(5,9);ctx.moveTo(0,13);ctx.lineTo(4,13);ctx.stroke();
+      // Bow gleam
+      ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.arc(0,-5,7.5,Math.PI*1.05,Math.PI*1.45);ctx.stroke();
       ctx.shadowBlur=0;
     } else if(item.type==='chest'){
       const lk=item.locked;
       const cf=.8+.2*Math.sin(G.t*2.8+item.bob);
-      ctx.shadowColor=lk?'#c8a030':'#44ff88';ctx.shadowBlur=16*cf;
-      // Body
-      ctx.fillStyle='#2a1e10';ctx.fillRect(-14,-9,28,17);
-      ctx.fillStyle='#1e1408';ctx.fillRect(-14,-9,28,8); // lid
-      ctx.strokeStyle=lk?`rgba(200,160,48,${cf})`:`rgba(68,255,136,${cf})`;ctx.lineWidth=2;
-      ctx.strokeRect(-14,-9,28,17);ctx.strokeRect(-14,-9,28,8);
-      // Lock or open chevron
+      const HW=14, bT=-2, bB=9, lT=-11; // mini coffer matching the barrel chest
+      // Wood body + domed lid (drawn flat — no glow on the wood)
+      const bgc=ctx.createLinearGradient(0,bT,0,bB);
+      bgc.addColorStop(0,'#6b4a22');bgc.addColorStop(.5,'#43290f');bgc.addColorStop(1,'#241407');
+      ctx.fillStyle=bgc;ctx.fillRect(-HW,bT,HW*2,bB-bT);
+      const lgc=ctx.createLinearGradient(-HW,lT,HW,bT);
+      lgc.addColorStop(0,'#7a5528');lgc.addColorStop(.5,'#4d3013');lgc.addColorStop(1,'#2a1809');
+      ctx.fillStyle=lgc;
+      ctx.beginPath();ctx.moveTo(-HW,bT);ctx.quadraticCurveTo(-HW,lT,0,lT);ctx.quadraticCurveTo(HW,lT,HW,bT);ctx.closePath();ctx.fill();
+      // seam + iron bands
+      ctx.strokeStyle='rgba(10,6,2,.6)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-HW,bT);ctx.lineTo(HW,bT);ctx.stroke();
+      ctx.fillStyle='#3b3026';
+      [-HW*.6,HW*.6].forEach(bx=>ctx.fillRect(bx-2,lT+2,4,bB-lT-2));
+      // Glowing state outline — gold=locked, green=openable
+      ctx.shadowColor=lk?'#c8a030':'#44ff88';ctx.shadowBlur=14*cf;
+      ctx.strokeStyle=lk?`rgba(210,170,55,${cf})`:`rgba(80,255,150,${cf})`;ctx.lineWidth=2;
+      ctx.strokeRect(-HW,bT,HW*2,bB-bT);
+      ctx.beginPath();ctx.moveTo(-HW,bT);ctx.quadraticCurveTo(-HW,lT,0,lT);ctx.quadraticCurveTo(HW,lT,HW,bT);ctx.stroke();
+      // Lock plate (locked) or open chevron (unlocked)
       if(lk){
-        ctx.fillStyle=`rgba(200,160,48,${cf})`;
-        ctx.beginPath();ctx.arc(0,-5,4,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle='#1e1408';ctx.beginPath();ctx.arc(0,-5,2,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#c8a030';ctx.strokeStyle='#7a5e12';ctx.lineWidth=1;
+        ctx.beginPath();ctx.rect(-4,bT-2,8,8);ctx.fill();ctx.stroke();
+        ctx.fillStyle='#2a1e08';ctx.beginPath();ctx.arc(0,bT+1.5,1.6,0,Math.PI*2);ctx.fill();
+        ctx.fillRect(-.8,bT+1.5,1.6,3);
       } else {
-        ctx.strokeStyle=`rgba(68,255,136,${cf})`;ctx.lineWidth=2;
-        ctx.beginPath();ctx.moveTo(-5,0);ctx.lineTo(0,-5);ctx.lineTo(5,0);ctx.stroke();
+        ctx.strokeStyle=`rgba(120,255,170,${cf})`;ctx.lineWidth=2;ctx.lineCap='round';
+        ctx.beginPath();ctx.moveTo(-5,bT+3);ctx.lineTo(0,bT-3);ctx.lineTo(5,bT+3);ctx.stroke();
       }
       ctx.shadowBlur=0;
     } else if(item.type==='powerup'){
@@ -9938,7 +11319,9 @@ function drawItems2(){
       const pulse=.8+.2*Math.sin(G.t*3+item.bob);
       ctx.shadowColor=c;ctx.shadowBlur=14*pulse;
       // Shared base — glowing gem background
-      ctx.fillStyle=c+'22';ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.fill();
+      const pbg=ctx.createRadialGradient(-4,-4,2,0,0,13);
+      pbg.addColorStop(0,c+'66');pbg.addColorStop(1,c+'11');
+      ctx.fillStyle=pbg;ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.fill();
       ctx.strokeStyle=c;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.stroke();
 
       if(item.id==='triple_shot'){
@@ -10006,6 +11389,8 @@ function drawEnemies2(){
       const f=e.stagger/e.staggerDur;
       ctx.rotate(Math.cos(e.staggerDir)*f*0.38);
     }
+    // Impact squash — quick wide-and-short pop on the frames right after a hit
+    if(e.hitFlash>0){const pop=1+Math.min(.35,e.hitFlash*2.3);ctx.scale(pop,1/Math.sqrt(pop));}
     const fl=e.hitFlash>0,col=fl?'#ffffff':(e.col||'#bbbbbb'),out=fl?'#ffffff':(e.out||'#000');
     const sz=TL*(e.sz||.5);
     if(!isFinite(sz)||sz<=0){ctx.restore();return;} // skip if corrupted
@@ -11304,22 +12689,36 @@ function drawKnightBody(p){
   ctx.restore();
 }
 
+function drawHeart(cx,cy,s,col){
+  ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=5;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy+s);
+  ctx.bezierCurveTo(cx-1.4*s,cy-0.2*s, cx-0.7*s,cy-1.2*s, cx,cy-0.35*s);
+  ctx.bezierCurveTo(cx+0.7*s,cy-1.2*s, cx+1.4*s,cy-0.2*s, cx,cy+s);
+  ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+}
 function drawParts(){
   const cx=G.cam.x,cy=G.cam.y,cw=cv.width,ch=cv.height;
   G.parts.forEach(p=>{
     // Cull off-screen particles to avoid wasted draws
     if(p.x<cx-20||p.x>cx+cw+20||p.y<cy-20||p.y>cy+ch+20)return;
-    ctx.globalAlpha=p.life/p.ml;
-    ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(p.x,p.y,p.sz*(p.life/p.ml),0,Math.PI*2);ctx.fill();
-  });ctx.globalAlpha=1;
+    const k=p.life/p.ml;
+    ctx.globalAlpha=k;
+    if(p.heart){drawHeart(p.x,p.y,p.sz*(.7+.5*k),p.col);}
+    else{ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(p.x,p.y,p.sz*k,0,Math.PI*2);ctx.fill();}
+  });ctx.globalAlpha=1;ctx.shadowBlur=0;
 }
 
 function drawFTs(){
   G.ftexts.forEach(t=>{
     const sx=t.x-G.cam.x,sy=t.y-G.cam.y;
-    ctx.globalAlpha=t.life/t.ml;
+    ctx.globalAlpha=Math.min(1,t.life/t.ml);
+    // brief scale-up at spawn, then settle
+    let sc=1;
+    if(t.pop){const pw=Math.max(0,(t.life-(t.ml-.15))/.15);sc=1+.45*pw*t.pop;}
+    const fs=Math.max(8,Math.round((t.size||14)*sc));
     ctx.fillStyle=t.col;ctx.shadowColor=t.col;ctx.shadowBlur=6;
-    ctx.font='bold 14px "IM Fell English",serif';
+    ctx.font='bold '+fs+'px "IM Fell English",serif';
     ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(t.t,sx,sy);
   });ctx.globalAlpha=1;ctx.shadowBlur=0;
@@ -11730,11 +13129,12 @@ function updTeamCards(){
     if(!p||i===MP.localPlayerIdx)return;
     const hpFrac=Math.max(0,Math.min(1,(p.hp||0)/(p.maxHp||100)));
     const dead=hpFrac<=0;
+    const low=!dead&&hpFrac<.3;
     const col=p.charAccent||p.charPrimary||'#888';
     const lives=Math.max(0,p.lives===undefined?3:p.lives);
     const dist=G.p&&(MODE==='level'||MODE==='boss')?Math.hypot((p.x||0)-G.p.x,(p.y||0)-G.p.y):0;
     const farTag=(MODE==='level'||MODE==='boss')&&dist>TL*12?'<span style="color:#b0a070">·far</span>':'';
-    cards.push(`<div class="team-card${dead?' dead':''}" style="--pc:${col}">
+    cards.push(`<div class="team-card${dead?' dead':(low?' low':'')}" style="--pc:${col}">
       <div class="team-card-dot" style="background:${col};color:${col}">P${i+1}</div>
       <div class="team-card-info">
         <div class="team-card-name"><span>${CHAR_CLASSES&&p.charClass?(p.charClass[0].toUpperCase()+p.charClass.slice(1)):'Player '+(i+1)}</span><span>${dead?'<span style="color:#c55">DOWN</span>':farTag}</span></div>
@@ -11760,6 +13160,14 @@ function loop(ts){
     const dt=Math.min((ts-lastT)/1000,.05);lastT=ts;
     if(G.t!==undefined)G.t+=dt;
     if(G.shakeT>0)G.shakeT=Math.max(0,G.shakeT-dt*38);
+    if(G.camKickX||G.camKickY){const kd=Math.min(1,dt*24);G.camKickX=lerp(G.camKickX||0,0,kd);G.camKickY=lerp(G.camKickY||0,0,kd);if(Math.abs(G.camKickX)<.05&&Math.abs(G.camKickY)<.05){G.camKickX=0;G.camKickY=0;}}
+    if(G.dmgDirT>0)G.dmgDirT=Math.max(0,G.dmgDirT-dt*3);
+    // Low-HP heartbeat — interval shortens the closer to death
+    if((MODE==='level'||MODE==='boss')&&G.p&&G.p.hp>0&&G.p.maxHp){
+      const hf=G.p.hp/G.p.maxHp;
+      if(hf<.34){const iv=.85-(.34-hf)/.34*.45;G._hbT=(G._hbT||0)-dt;if(G._hbT<=0){try{SFX.heartbeat();}catch(e){}G._hbT=iv;}}
+      else G._hbT=0;
+    }
     if(G.hurtFlash>0)G.hurtFlash=Math.max(0,G.hurtFlash-dt*3.2);
     if(G.meleeArc){G.meleeArc.timer-=dt;if(G.meleeArc.timer<=0)G.meleeArc=null;}
     if(G.shockwave){
@@ -11808,6 +13216,7 @@ function loop(ts){
       } else {
         procInput(dt);
         updatePlayer(dt);
+        playerMoveFx(G.p);
         // Host: decay timers for remote players too (they don't have their own updatePlayer running here)
         if(MP.enabled&&MP.isHost){
           (G.players||[]).forEach(rp=>{
@@ -11829,6 +13238,7 @@ function loop(ts){
           if(MODE==='boss')updateBoss(dt);
         }
         if(MODE==='boss')updateIceWall(dt); // host advances+damages; client feels the push
+        updateChargeTeles(dt);
         updateDyingEnemies(dt); // clients need this too for death tumbles from broadcast
         updateProjs(dt);
         updateFamiliars(dt);
@@ -11854,7 +13264,7 @@ function loop(ts){
     try{
       let mt='menu';
       if(MODE==='charselect')mt='menu';
-      else if(MODE==='boss')mt='boss_'+(['forsaken','mountain','castle','ice'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
+      else if(MODE==='boss')mt=(G.lv&&G.lv.bossDefeated)?'victory':('boss_'+(['forsaken','mountain','castle','ice'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken'));
       else if(MODE==='shop'||MODE==='summary')mt='shop'; // shop + level recap share the relaxed groove (reward/breather)
       else if(MODE==='hub')mt='hub'; // tower = calm tower theme
       else if(MODE==='level')mt=(['forsaken','mountain','castle','ice'].includes(G.curRealm?.id)?G.curRealm.id:'forsaken');
