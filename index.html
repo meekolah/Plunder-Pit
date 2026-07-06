@@ -298,7 +298,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='2.55';
+const VERSION='2.56';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -9615,7 +9615,7 @@ function showMsg(txt){
 const ANN=(()=>{
   let enabled=true;try{enabled=localStorage.getItem('plunderpit_announcer')!=='0';}catch(e){}
   let voice=null,voiceTried=0,unlocked=false;
-  let lastStart=0,everSpoke=false; // health: set by utterance onstart — proof audio actually fired
+  let lastStart=0,lastEnd=0,everSpoke=false,lastEvent='none',curU=null; // curU: keep a live ref — Safari GCs in-flight utterances → silence
   const cds={}; // per-key cooldown timestamps
   let bar=null,barTO=null;
   function showBanner(text){
@@ -9663,9 +9663,27 @@ const ANN=(()=>{
       else if(speechSynthesis.pending)speechSynthesis.cancel(); // flush backlog: newest line wins
       const u=new SpeechSynthesisUtterance(text);
       if(voice)u.voice=voice;
-      u.pitch=0.5;u.rate=0.95;u.volume=1;
-      u.onstart=()=>{lastStart=performance.now();everSpoke=true;};
+      u.lang='en-US';u.pitch=0.5;u.rate=0.95;u.volume=1;
+      const tok=performance.now();
+      u.onstart=()=>{lastStart=performance.now();everSpoke=true;lastEvent='start';};
+      u.onend=()=>{lastEnd=performance.now();lastEvent='end';if(curU===u)curU=null;};
+      u.onerror=(ev)=>{lastEvent='error:'+(ev.error||'?');if(curU===u)curU=null;};
+      curU=u; // hold the reference until it finishes
       speechSynthesis.speak(u);
+      // Auto-heal: if audio never starts, retry once as a vanilla utterance (default voice/pitch —
+      // sidesteps voice-object and pitch quirks on some iOS versions)
+      setTimeout(()=>{
+        if(lastStart>=tok||G.muted||!enabled)return;
+        try{
+          speechSynthesis.cancel();speechSynthesis.resume();
+          const v=new SpeechSynthesisUtterance(text);
+          v.lang='en-US';
+          v.onstart=()=>{lastStart=performance.now();everSpoke=true;lastEvent='start';voice=null;};
+          v.onend=()=>{lastEnd=performance.now();lastEvent='end';if(curU===v)curU=null;};
+          v.onerror=(ev)=>{lastEvent='error:'+(ev.error||'?');if(curU===v)curU=null;};
+          curU=v;speechSynthesis.speak(v);
+        }catch(e){}
+      },1200);
     }catch(e){}
   }
   function setEnabled(on){enabled=on;try{localStorage.setItem('plunderpit_announcer',on?'1':'0');}catch(e){}if(!on){try{speechSynthesis.cancel();}catch(e){}}}
@@ -9675,8 +9693,17 @@ const ANN=(()=>{
     const before=lastStart;
     say('Announcer enabled','tog',0);
     setTimeout(()=>{
-      if(lastStart===before&&!G.muted)showBanner(everSpoke?'Voice stalled — text-only for now':'Voice unavailable here — text-only');
-    },1600);
+      const n=(speechSynthesis.getVoices()||[]).length;
+      let msg;
+      if(lastStart>before){
+        // The synth genuinely produced audio. If it was inaudible, the phone ate it.
+        msg='Voice OK ('+(voice?voice.name:'default')+') — if silent: check ring/silent + volume + Bluetooth';
+      } else {
+        msg='No voice — voices:'+n+' · last:'+lastEvent+' — text-only';
+      }
+      if(!G.muted)showBanner(msg);
+      try{console.log('[ANN diag] voices:'+n+' picked:'+(voice?voice.name:'null')+' event:'+lastEvent+' unlocked:'+unlocked);}catch(e){}
+    },1800);
   }
   return {say,setEnabled,voiceCheck,get enabled(){return enabled;}};
 })();
