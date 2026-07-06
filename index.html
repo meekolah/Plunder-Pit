@@ -11,6 +11,11 @@
   <meta name="apple-mobile-web-app-title" content="Plunder Pit">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="theme-color" content="#1a0f24">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Plunder Pit">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231a0f24'/%3E%3Cpath d='M16 22 L32 14 L48 22 L48 42 L32 50 L16 42 Z' fill='%23c8a030' stroke='%23f5d050' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%231a0f24'/%3E%3Cpath d='M28 30 L32 26 L36 30 L36 36 L32 38 L28 36 Z' fill='%23ff6622'/%3E%3C/svg%3E">
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
   <script>
@@ -293,7 +298,7 @@ function hexA(hex,a){
 // ═══════════════════════════════════════
 // TILE CONSTANTS
 // ═══════════════════════════════════════
-const VERSION='2.51';
+const VERSION='2.55';
 const TL=38, MW=36, MH=36;
 // Camera zoom for level/boss mode. 1 = no zoom; >1 zooms in (shows less map, bigger sprites).
 const CAMZOOM=1.42;
@@ -4684,6 +4689,7 @@ function startBoss(){
   MODE='boss';
   document.getElementById('hud').classList.remove('hidden');
   showRLabel('⚠ ' + realm.boss.name);
+  ANN.say(realm.boss.name+' draws near','bossIntro',5);
   // Pull clients into the boss arena
   if(MP.isHost&&MP.enabled)mpSendCurrentLevel();
 }
@@ -5569,6 +5575,8 @@ function useItem(){
   p.itemTimer=dur[p.item]||15;
   const names={triple_shot:'3-Way Shot ACTIVE',rapid_fire:'Rapid Fire ACTIVE',fury:'FURY MODE',barrier:'Barrier ACTIVE'};
   showMsg(names[p.item]||'Item activated!');
+  const annNames={triple_shot:'Triple shot',rapid_fire:'Rapid fire',fury:'Fury',barrier:'Barrier'};
+  if(annNames[p.item])ANN.say(annNames[p.item],'pow',1);
   spawnP(p.x,p.y,'#44ffcc',12);
 }
 
@@ -6943,7 +6951,7 @@ function mpConnect(roomCode){
       MP._ping=setInterval(()=>{if(MP.enabled||!MP.isHost)mpSend({type:'ping',playerId:MP.playerId});},5000);
       if(!MP.isHost){
         const sendJoin=()=>mpSend({type:'join',playerId:MP.playerId,
-      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass});
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass,charColor:G.p.charColor});
         sendJoin();
         MP._joinRetry=setInterval(()=>{if(MP.enabled){clearInterval(MP._joinRetry);return;}sendJoin();},3000);
         MP._joinTimeout=setTimeout(()=>{
@@ -7260,9 +7268,9 @@ function mpHandleMessage(d){
           const sx=HPSX*TL,sy=HPSY*TL;
           G.players[ri.playerIdx]=createRemotePlayer(d.playerId,ri.playerIdx,sx,sy);
         }
-        if(d.charPrimary){G.players[ri.playerIdx].charPrimary=d.charPrimary;G.players[ri.playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[ri.playerIdx].charClass=d.charClass;}
+        if(d.charPrimary){G.players[ri.playerIdx].charPrimary=d.charPrimary;G.players[ri.playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[ri.playerIdx].charClass=d.charClass;if(d.charColor)G.players[ri.playerIdx].charColor=d.charColor;}
         mpSend({type:'welcome',playerId:d.playerId,playerIdx:ri.playerIdx,
-          totalPlayers:G.players.length,hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
+          totalPlayers:G.players.length,hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent,hostClass:G.p.charClass,hostColor:G.p.charColor});
         mpUpdateLobby();return;
       }
       // Find lowest free player slot
@@ -7274,10 +7282,10 @@ function mpHandleMessage(d){
       MP.remoteInputs[d.playerId]={keys:{},mousePos:{x:0,y:0},mouseBtn:false,playerIdx,lastPing:Date.now()};
       // Always create fresh slot — handles null from previous eviction
       G.players[playerIdx]=createRemotePlayer(d.playerId,playerIdx,sx,sy);
-      if(d.charPrimary){G.players[playerIdx].charPrimary=d.charPrimary;G.players[playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[playerIdx].charClass=d.charClass;}
+      if(d.charPrimary){G.players[playerIdx].charPrimary=d.charPrimary;G.players[playerIdx].charAccent=d.charAccent;if(d.charClass)G.players[playerIdx].charClass=d.charClass;if(d.charColor)G.players[playerIdx].charColor=d.charColor;}
       MP.enabled=true;
       mpSend({type:'welcome',playerId:d.playerId,playerIdx,totalPlayers:G.players.length,
-        hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent});
+        hostPrimary:G.p.charPrimary,hostAccent:G.p.charAccent,hostClass:G.p.charClass,hostColor:G.p.charColor});
       mpUpdateLobby();showMsg(`Player ${playerIdx+1} joined!`);
     }
     if(d.type==='input'&&MP.remoteInputs[d.playerId]){
@@ -7295,7 +7303,7 @@ function mpHandleMessage(d){
         if(rp._tx===undefined){rp.x=d.px;rp.y=d.py;}
         rp._tx=d.px;rp._ty=d.py; // interpRemotes() chases this every frame
         if(d.facingX!==undefined)rp.facing={x:d.facingX,y:d.facingY};
-        if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;if(d.charClass)rp.charClass=d.charClass;}
+        if(d.charPrimary){rp.charPrimary=d.charPrimary;rp.charAccent=d.charAccent;if(d.charClass)rp.charClass=d.charClass;if(d.charColor)rp.charColor=d.charColor;}
         if(d.playerMode)rp.playerMode=d.playerMode;
         if(typeof d.atk==='number')rp.atk=d.atk;
         if(typeof d.maxHp==='number')rp.maxHp=d.maxHp;
@@ -7374,6 +7382,8 @@ function mpHandleMessage(d){
       if(d.hostPrimary&&G.players[0]&&G.players[0]!==G.p){
         G.players[0].charPrimary=d.hostPrimary;
         G.players[0].charAccent=d.hostAccent;
+        if(d.hostClass)G.players[0].charClass=d.hostClass;
+        if(d.hostColor)G.players[0].charColor=d.hostColor;
       }
       MP.enabled=true;
       document.getElementById('mp-modal').classList.add('hidden');
@@ -7521,6 +7531,7 @@ function mpBroadcastState(){
       attacking:p.attacking,atkProg:p.atkProg,atkAngle:p.atkAngle,
       fz:Math.round((p.frozen||0)*100)/100,
       playerMode:p===G.p?MODE:p.playerMode,
+      charPrimary:p.charPrimary,charAccent:p.charAccent,charClass:p.charClass,charColor:p.charColor,
     }:null),
     projs:G.projs.slice(0,60).map(pr=>({
       x:Math.round(pr.x),y:Math.round(pr.y),
@@ -7582,7 +7593,7 @@ function mpApplyState(data){
     MP.enabled=false;
     showMsg('Reconnecting...');
     mpSend({type:'join',playerId:MP.playerId,
-      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass});
+      charPrimary:G.p.charPrimary,charAccent:G.p.charAccent,charClass:G.p.charClass,charColor:G.p.charColor});
     return;
   }
   // Client follows host into level — request sync if missed
@@ -7923,6 +7934,9 @@ function mpApplyState(data){
     rp.hp=snap.hp;rp.maxHp=snap.maxHp;rp.invuln=snap.invuln;
     rp.facing={x:snap.facingX,y:snap.facingY};
     if(snap.charPrimary)rp.charPrimary=snap.charPrimary;
+    if(snap.charAccent)rp.charAccent=snap.charAccent;
+    if(snap.charClass)rp.charClass=snap.charClass;
+    if(snap.charColor)rp.charColor=snap.charColor;
     if(snap.charAccent)rp.charAccent=snap.charAccent;
     rp.turbo=snap.turbo;rp.item=snap.item;
     rp.frozen=snap.fz||0; // show the ice shell on frozen teammates
@@ -8721,6 +8735,7 @@ function resetBossAfterDeath(){
 }
 
 function startBossDeath(b,bx,by){
+  ANN.say((b&&b.name?b.name:'The boss')+' has been vanquished','bossDead',5);
   b.dying=true;b.dyingTimer=0;b.dyingDuration=3.0;
   if(G.lv)G.lv.bossDefeated=true; // switches music to the victory theme
   // Clear any lingering attacks (soul tether beam, hazards)
@@ -8843,6 +8858,7 @@ function checkLevelUp(){
         addFT('LEVEL UP!',p.x,p.y-TL*1.6,'#f5c542');
         showMsg(`Level ${p.level}! Max HP +15`);
       }
+      ANN.say(annTitle(p)+' has gained a level','lvl_'+(p.playerId||'me'),2);
     }
   });
 }
@@ -9462,6 +9478,7 @@ const MUSIC=(()=>{
 function onDeath(p){
   p=p||G.p;
   p.hp=0;
+  ANN.say(annTitle(p)+' has died','death_'+(p.playerId||'me'),3);
   if(p.lives===undefined)p.lives=3;
   const isLocal=(p===G.p);
   // Remember whether we died mid-boss so respawn returns to the right mode (the boss
@@ -9590,6 +9607,90 @@ function showMsg(txt){
   el.textContent=txt;el.style.opacity=1;
   if(msgTO)clearTimeout(msgTO);
   msgTO=setTimeout(()=>{el.style.opacity=0;},2700);
+}
+
+// ═══════════════════════════════════════
+// ANNOUNCER — arcade-style voice for key moments (level ups, powerups, low HP, deaths, bosses)
+// ═══════════════════════════════════════
+const ANN=(()=>{
+  let enabled=true;try{enabled=localStorage.getItem('plunderpit_announcer')!=='0';}catch(e){}
+  let voice=null,voiceTried=0,unlocked=false;
+  let lastStart=0,everSpoke=false; // health: set by utterance onstart — proof audio actually fired
+  const cds={}; // per-key cooldown timestamps
+  let bar=null,barTO=null;
+  function showBanner(text){
+    if(!bar){
+      bar=document.createElement('div');bar.id='annbar';
+      bar.style.cssText='position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 78px);transform:translateX(-50%);font-family:Cinzel,serif;color:#f0c860;text-shadow:0 0 14px rgba(240,180,60,.55),0 2px 4px #000;font-size:clamp(13px,2.4vw,21px);letter-spacing:.14em;text-transform:uppercase;opacity:0;transition:opacity .25s;pointer-events:none;z-index:60;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis;';
+      document.body.appendChild(bar);
+    }
+    bar.textContent=text;bar.style.opacity=1;
+    if(barTO)clearTimeout(barTO);
+    barTO=setTimeout(()=>{bar.style.opacity=0;},2400);
+  }
+  // iOS blocks speech until it's been triggered inside a user gesture — prime it once on first input
+  function unlock(){
+    if(unlocked||!('speechSynthesis' in window))return;
+    unlocked=true;
+    try{speechSynthesis.resume();speechSynthesis.speak(new SpeechSynthesisUtterance(''));pickVoice();}catch(e){}
+    ['pointerdown','touchend','keydown'].forEach(ev=>removeEventListener(ev,unlock,{capture:true}));
+  }
+  ['pointerdown','touchend','keydown'].forEach(ev=>addEventListener(ev,unlock,{capture:true,passive:true}));
+  addEventListener('visibilitychange',()=>{if(!document.hidden){try{speechSynthesis.resume();}catch(e){}}});
+  function pickVoice(){
+    if(!('speechSynthesis' in window))return;
+    const vs=speechSynthesis.getVoices();if(!vs.length)return;
+    // Prefer deep/male English voices for that dungeon-announcer gravitas
+    const prefs=['Daniel','Alex','Fred','Google UK English Male','Microsoft David','Aaron'];
+    voice=vs.find(v=>prefs.some(p=>v.name.includes(p))&&v.lang.startsWith('en'))
+        ||vs.find(v=>v.lang.startsWith('en'))||vs[0];
+  }
+  if('speechSynthesis' in window){
+    pickVoice();
+    speechSynthesis.onvoiceschanged=()=>{if(!voice)pickVoice();};
+  }
+  function say(text,key,cd){
+    if(!enabled)return;
+    const now=performance.now();
+    if(key){if(cds[key]&&now-cds[key]<(cd||2)*1000)return;cds[key]=now;}
+    showBanner(text); // visual channel always runs — voice may be unavailable (muted, webviews)
+    if(G.muted||!('speechSynthesis' in window))return;
+    try{
+      if(!voice&&voiceTried++<5)pickVoice();
+      speechSynthesis.resume(); // iOS wedges the queue in a paused state after cancel()/backgrounding
+      // Stuck-synth watchdog: iOS can report speaking=true forever after an interruption — clear it
+      if(speechSynthesis.speaking&&now-lastStart>8000)speechSynthesis.cancel();
+      else if(speechSynthesis.pending)speechSynthesis.cancel(); // flush backlog: newest line wins
+      const u=new SpeechSynthesisUtterance(text);
+      if(voice)u.voice=voice;
+      u.pitch=0.5;u.rate=0.95;u.volume=1;
+      u.onstart=()=>{lastStart=performance.now();everSpoke=true;};
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  function setEnabled(on){enabled=on;try{localStorage.setItem('plunderpit_announcer',on?'1':'0');}catch(e){}if(!on){try{speechSynthesis.cancel();}catch(e){}}}
+  // Toggle-time self-test: runs inside the tap (most permissive context). If audio never fires, tell the player.
+  function voiceCheck(){
+    if(!('speechSynthesis' in window)){showBanner('Voice not supported here — text-only');return;}
+    const before=lastStart;
+    say('Announcer enabled','tog',0);
+    setTimeout(()=>{
+      if(lastStart===before&&!G.muted)showBanner(everSpoke?'Voice stalled — text-only for now':'Voice unavailable here — text-only');
+    },1600);
+  }
+  return {say,setEnabled,voiceCheck,get enabled(){return enabled;}};
+})();
+// "Blue Knight" — a player's announcer title from their chosen color + class
+function annTitle(p){
+  p=p||G.p;
+  let col='',cls='Hero';
+  try{
+    const byId=CHAR_COLORS.find(x=>x.id===p.charColor);
+    const byHex=!byId&&p.charPrimary?CHAR_COLORS.find(x=>x.primary===p.charPrimary):null;
+    col=((byId||byHex)||{}).label||'';
+  }catch(e){}
+  try{cls=(CHAR_CLASSES.find(x=>x.id===p.charClass)||{}).name||'Hero';}catch(e){}
+  return (col?col+' ':'')+cls;
 }
 
 // ═══════════════════════════════════════
@@ -12862,6 +12963,7 @@ function drawPause(){
     {label:'CONTROLS',bg:'#141a28',glow:'#4a6699'},
     {label:(G.muted?'🔇':'🔊')+' SOUND',bg:'#141820',glow:'#335566'},
     {label:(typeof MUSIC!=='undefined'&&MUSIC.isEnabled()?'🎵':'🔇')+' MUSIC',bg:'#161426',glow:'#5a3a99'},
+    {label:(ANN.enabled?'🗣':'🔇')+' ANNOUNCER',bg:'#181622',glow:'#886633'},
   ];
   // Changing class re-rolls your build, so only offer it from the tower (not mid-dungeon)
   // and not in co-op (a mid-session class swap would desync the party).
@@ -13166,6 +13268,10 @@ function loop(ts){
     if((MODE==='level'||MODE==='boss')&&G.p&&G.p.hp>0&&G.p.maxHp){
       const hf=G.p.hp/G.p.maxHp;
       if(hf<.34){const iv=.85-(.34-hf)/.34*.45;G._hbT=(G._hbT||0)-dt;if(G._hbT<=0){try{SFX.heartbeat();}catch(e){}G._hbT=iv;}}
+      if(hf<.15){if(!G._annDie){G._annDie=1;ANN.say(annTitle(G.p)+' is about to die','die',8);}}
+      else if(hf<.34){if(!G._annFood){G._annFood=1;ANN.say(annTitle(G.p)+' needs food, badly','food',8);}}
+      if(hf>=.34)G._annDie=0;
+      if(hf>=.5)G._annFood=0;
       else G._hbT=0;
     }
     if(G.hurtFlash>0)G.hurtFlash=Math.max(0,G.hurtFlash-dt*3.2);
@@ -13973,6 +14079,10 @@ function handlePauseClick(cx,cy){
         return; // stay paused so the label updates and the player can keep adjusting
       } else if(b.label.includes('MUSIC')){
         if(typeof MUSIC!=='undefined')MUSIC.setEnabled(!MUSIC.isEnabled());
+        return; // stay paused
+      } else if(b.label.includes('ANNOUNCER')){
+        ANN.setEnabled(!ANN.enabled);
+        if(ANN.enabled)ANN.voiceCheck();
         return; // stay paused
       } else if(b.label==='CHANGE HERO'){
         openHeroChange();
